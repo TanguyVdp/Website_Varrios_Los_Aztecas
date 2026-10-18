@@ -455,6 +455,15 @@
       commit();
     },
 
+    // boss: elke afwezigheid schrappen (ook die van anderen)
+    async bossDeleteAfwezigheid(id) {
+      await latency();
+      const i = state.absences.findIndex(a => a.id === id);
+      if (i < 0) throw E('AFWEZIGHEID_NIET_GEVONDEN');
+      state.absences.splice(i, 1);
+      commit();
+    },
+
     // ---- boss (later: allemaal SECURITY DEFINER-functies die de bosscode controleren) ----
     // afwezigheid beoordelen: status 'goedgekeurd' | 'afgekeurd' | null (= enkel reageren)
     async reviewAfwezigheid(id, { status, reactie }, door) {
@@ -593,7 +602,7 @@
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
       keer = posInt(keer);
-      if (keer > 50) throw E('TE_VEEL_KEER');
+      if (keer > AM.MAX_KEER) throw E('TE_VEEL_KEER');
       if (!AM.LEVERING[levering]) throw E('ONGELDIGE_LEVERING');
       if (state.tickets.some(t => t.user_id === u.id && AM.OPEN(t.status))) throw E('AL_OPEN_TICKET');
       const t = newTicket(state, u, keer, levering, String(opmerking || '').trim().slice(0, 300), iso(Date.now()));

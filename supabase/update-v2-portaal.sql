@@ -356,6 +356,16 @@ begin
   return true;
 end; $$;
 
+-- boss: elke afwezigheid schrappen
+create or replace function fn_boss_delete_absence(p_id uuid, p_boss_pin_hash text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  perform _require_boss(p_boss_pin_hash);
+  delete from absences where id = p_id;
+  if not found then raise exception 'AFWEZIGHEID_NIET_GEVONDEN'; end if;
+  return true;
+end; $$;
+
 -- ============================================================
 -- mededelingen + agenda (boss) en aanmelden (leden)
 -- ============================================================
@@ -544,7 +554,7 @@ begin
   if v_user.id is null then raise exception 'GEBRUIKER_NIET_GEVONDEN'; end if;
   if not (v_user.access_amfi or v_user.amfi_staff or lower(v_user.name) = 'gangpot') then raise exception 'GEEN_TOEGANG'; end if;
   if p_keer is null or p_keer <= 0 then raise exception 'ONGELDIG_AANTAL'; end if;
-  if p_keer > 50 then raise exception 'TE_VEEL_KEER'; end if;
+  if p_keer > 100 then raise exception 'TE_VEEL_KEER'; end if;
   if p_levering not in ('zelf','wij') then raise exception 'ONGELDIGE_LEVERING'; end if;
   if exists (select 1 from amfi_tickets where user_id = p_user_id and status in ('wachtrij','bezig')) then raise exception 'AL_OPEN_TICKET'; end if;
   update portal_settings set ticket_seq = ticket_seq + 1 where id = true returning ticket_seq into v_nr;
@@ -654,7 +664,7 @@ grant execute on function
   fn_boss_set_access(uuid, text, boolean, text),
   fn_boss_set_rank(uuid, text, text),
   fn_add_absence(uuid, date, date, text, text), fn_delete_absence(uuid, uuid),
-  fn_review_absence(uuid, text, text, text, text),
+  fn_review_absence(uuid, text, text, text, text), fn_boss_delete_absence(uuid, text),
   fn_add_notice(text, text, text, text, text), fn_delete_notice(uuid, text),
   fn_add_event(text, text, date, text, text, text, text, text), fn_delete_event(uuid, text),
   fn_set_rsvp(uuid, uuid, text, text),

@@ -887,6 +887,13 @@
           const a = ctx.state.absences.find(x => x.id === b.dataset.id);
           if (a) reviewModal(a, b.dataset.review || null, ctx);
         }));
+        root.querySelectorAll('[data-abs-del]').forEach(b => b.addEventListener('click', () => {
+          const a = ctx.state.absences.find(x => x.id === b.dataset.absDel);
+          if (!a) return;
+          const per = `${U.dayLabel(a.van)}${a.tot !== a.van ? ' → ' + U.dayLabel(a.tot) : ''}`;
+          confirmModal(`Afwezigheid van ${U.esc(a.user_name)} schrappen?`, `De melding van ${per} verdwijnt volledig (ook uit de planning en de agenda). Dit kan niet ongedaan gemaakt worden.`, 'Schrappen',
+            async () => { await App.store.bossDeleteAfwezigheid(a.id); C.toast('Afwezigheid geschrapt'); });
+        }));
       }
 
       if (sec === 'leden') {

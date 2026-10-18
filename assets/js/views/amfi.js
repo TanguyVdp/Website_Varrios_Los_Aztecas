@@ -109,7 +109,7 @@
         <div class="field"><span>Hoeveel ${s.input_label} breng je binnen?</span>
           <div class="stepper">
             <button type="button" class="btn ghost" data-step="-1" aria-label="Minder">${I('minus', 16)}</button>
-            <input class="input lg mono" id="tk-keer" type="number" min="1" max="50" value="1" inputmode="numeric">
+            <input class="input lg mono" id="tk-keer" type="number" min="1" max="${AM.MAX_KEER}" value="1" inputmode="numeric">
             <button type="button" class="btn ghost" data-step="1" aria-label="Meer">${I('plus', 16)}</button>
             <span class="stepper-out" id="tk-out"></span>
           </div>
@@ -127,12 +127,12 @@
       </form>`, modal => {
       const $ = q => modal.querySelector(q);
       const sync = () => {
-        f.keer = Math.max(1, Math.min(50, Math.round(Number($('#tk-keer').value) || 1)));
+        f.keer = Math.max(1, Math.min(AM.MAX_KEER, Math.round(Number($('#tk-keer').value) || 1)));
         $('#tk-out').innerHTML = `${U.num(f.keer * s.input_per_keer)} ${s.input_label} → <b>${U.num(f.keer)}</b> ${AM.plural(f.keer, s.output_label)} <span class="dim">(waarde ${fmt(f.keer * s.output_waarde)})</span>`;
         $('#tk-quote').innerHTML = f.levering ? quoteHtml(AM.quote(s, f.keer, f.levering)) : '';
         $('#tk-submit').disabled = !f.levering;
       };
-      modal.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => { $('#tk-keer').value = Math.max(1, Math.min(50, f.keer + Number(b.dataset.step))); sync(); }));
+      modal.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => { $('#tk-keer').value = Math.max(1, Math.min(AM.MAX_KEER, f.keer + Number(b.dataset.step))); sync(); }));
       $('#tk-keer').addEventListener('input', sync);
       modal.querySelectorAll('[data-lev]').forEach(b => b.addEventListener('click', () => {
         f.levering = b.dataset.lev; modal.querySelectorAll('[data-lev]').forEach(x => x.classList.toggle('on', x === b)); sync();

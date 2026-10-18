@@ -297,6 +297,10 @@
       await rpc('fn_delete_absence', { p_id: id, p_user_id: userId });
       await after(['absences']);
     },
+    async bossDeleteAfwezigheid(id) {
+      await rpc('fn_boss_delete_absence', { p_id: id, p_boss_pin_hash: needBoss() });
+      await after(['absences']);
+    },
     async reviewAfwezigheid(id, { status, reactie }, door) {
       await rpc('fn_review_absence', { p_id: id, p_status: status || null, p_reactie: reactie || null, p_door: door, p_boss_pin_hash: needBoss() });
       await after(['absences']);
@@ -388,7 +392,7 @@
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
       keer = posInt(keer);
-      if (keer > 50) throw E('TE_VEEL_KEER');
+      if (keer > AM.MAX_KEER) throw E('TE_VEEL_KEER');
       if (!AM.LEVERING[levering]) throw E('ONGELDIGE_LEVERING');
       const quote = AM.quote(state.settings.amfi, keer, levering);
       // de database vult ticketnummer en plaats in de wachtrij in

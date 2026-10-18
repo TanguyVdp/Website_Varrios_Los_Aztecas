@@ -10,6 +10,7 @@
   const r2 = n => Math.round(n * 100) / 100;
 
   A.BOT = 'Varrios bot';
+  A.MAX_KEER = 100;                     // max amfetamine per ticket (ook in fn_amfi_create_ticket + App.ERR.TE_VEEL_KEER)
   A.DEFAULT = {
     input_label: 'amfetamine',          // wat het lid binnenbrengt
     input_per_keer: 1,

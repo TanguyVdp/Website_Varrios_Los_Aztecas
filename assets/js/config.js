@@ -214,7 +214,7 @@ App.ERR = {
   ONGELDIGE_FOTO: 'Kies een geldige afbeelding (jpg, png, webp …).',
   ONGELDIGE_LEVERING: 'Kies of je de mengproducten zelf aanlevert of laat aankopen.',
   AL_OPEN_TICKET: 'Je hebt al een open ticket — wacht tot dat afgerond is.',
-  TE_VEEL_KEER: 'Dat is te veel in één ticket (max 50 keer).',
+  TE_VEEL_KEER: 'Dat is te veel in één ticket (max 100 amfetamine).',
   GEEN_MEDEWERKER: 'Enkel amfi-medewerkers kunnen dit.',
   TICKET_GESLOTEN: 'Dit ticket is gesloten.',
   TICKET_NIET_GEVONDEN: 'Ticket niet gevonden.',

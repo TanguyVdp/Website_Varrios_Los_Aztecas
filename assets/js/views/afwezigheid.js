@@ -34,7 +34,7 @@
 
   const statusPill = a => { const s = A.STATUS[a.status] || A.STATUS.aangevraagd; return `<span class="rpill st" style="--accent:var(--${s.tone})">${I(s.icon, 11)}${s.label}</span>`; };
 
-  // opts.review = knoppen voor de Boss (goedkeuren / afkeuren / reageren)
+  // opts.review = knoppen voor de Boss (goedkeuren / afkeuren / reageren / schrappen)
   function row(a, { state, me }, today, opts = {}) {
     const u = state.users.find(x => x.id === a.user_id) || { name: a.user_name };
     const days = U.daysBetween(a.van, a.tot) + 1;
@@ -52,6 +52,7 @@
             ${a.status !== 'goedgekeurd' ? `<button class="btn ghost sm ok" data-review="goedgekeurd" data-id="${a.id}">${I('check', 13)} Goedkeuren</button>` : ''}
             ${a.status !== 'afgekeurd' ? `<button class="btn ghost sm no" data-review="afgekeurd" data-id="${a.id}">${I('x', 13)} Afkeuren</button>` : ''}
             <button class="btn ghost sm" data-review="" data-id="${a.id}">${I('message', 13)} ${a.reactie ? 'Reactie wijzigen' : 'Reageren'}</button>
+            <button class="btn ghost sm no" data-abs-del="${a.id}">${I('trash', 13)} Schrappen</button>
           </div>` : ''}
         </div>
         <div class="abs-side">
