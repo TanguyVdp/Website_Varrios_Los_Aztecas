@@ -30,7 +30,7 @@ App.RULES = {
   MAX_MOMENTEEL_INLEG: 6000,            // max planten per persoon tegelijk onverwerkt
   MAX_USERS: 25,
   GANGPOT_NAME: 'gangpot',
-  GANGPOT_DEEL: 5,                      // 1 op 5 ingelegde planten gaat naar gangpot
+  GANGPOT_DEEL: 0,                      // 0 = geen afroming meer: alles gaat naar wie inlegt (was 5 = 1 op 5 naar de gangpot)
   // dagelijkse server-restarts: een batch die dit raakt herbegint erna volledig
   RESTART_WINDOWS: [
     { h: 7,  m: 58, endH: 8,  endM: 3 },

@@ -102,7 +102,7 @@
       <section class="card action" id="action-panel">
         ${C.seg('action', [{ value: 'inleg', label: 'Inleggen', icon: 'sprout' }, { value: 'ophalen', label: 'Ophalen', icon: 'arrowDown' }], ui.action)}
         <p class="muted small action-hint">${isIn
-          ? `Elke <b>${R.RATIO_IN}</b> planten = <b>${R.RATIO_OUT}</b> zakje.${mine.gangpot ? '' : ` 1 op ${R.GANGPOT_DEEL} planten gaat automatisch naar de gangpot.`}`
+          ? `Elke <b>${R.RATIO_IN}</b> planten = <b>${R.RATIO_OUT}</b> zakje.${mine.gangpot || !R.GANGPOT_DEEL ? '' : ` 1 op ${R.GANGPOT_DEEL} planten gaat automatisch naar de gangpot.`}`
           : `Je kan enkel ophalen wat de wachtrij al verwerkt heeft.`}</p>
         <form id="action-form" class="stack" autocomplete="off">
           <label class="field"><span>${isIn ? 'Aantal planten' : 'Aantal zakjes'}</span>

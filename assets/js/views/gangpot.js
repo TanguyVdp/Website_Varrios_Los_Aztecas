@@ -89,7 +89,7 @@
           ${edit ? App.gangpotEditGrid(items) : ''}
           <div class="gp-grid ${edit ? 'gp-auto-row' : ''}">
             ${edit ? '' : items.map(it => `<div class="gp-item"><div class="gp-top"><span>${U.esc(it.naam)}</span></div><b class="mono">${App.boss.fmtItem(it)}</b></div>`).join('')}
-            ${gp ? `<div class="gp-item auto"><div class="gp-top"><span>Zakjes wiet</span><span class="rpill" style="--accent:var(--lime)">${I('leaf', 11)}automatisch</span></div><b class="mono">${U.num(snap.perUser.get(gp.id).tegoed)} <small>zakjes</small></b><span class="gp-sub">1 op ${App.RULES.GANGPOT_DEEL} van elke inleg in de Wiet loods</span></div>` : ''}
+            ${gp ? `<div class="gp-item auto"><div class="gp-top"><span>Zakjes wiet</span><span class="rpill" style="--accent:var(--lime)">${I('leaf', 11)}automatisch</span></div><b class="mono">${U.num(snap.perUser.get(gp.id).tegoed)} <small>zakjes</small></b><span class="gp-sub">${App.RULES.GANGPOT_DEEL ? `1 op ${App.RULES.GANGPOT_DEEL} van elke inleg in de Wiet loods` : 'wat het gangpot-profiel inlegt in de Wiet loods'}</span></div>` : ''}
           </div>
         </section>
         ${bijdrageCard(state)}

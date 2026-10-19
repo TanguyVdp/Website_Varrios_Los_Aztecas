@@ -20,9 +20,9 @@
   L.zakjesVoor = u => L.zakjesForTotal(u.legacy_zakjes || 0, u.total_ingelegd);
   L.zakjesVoorKlant = totaal => Math.floor(totaal / R.KLANT_RATIO_IN) * R.KLANT_RATIO_OUT;
 
-  // gangpot-afroming: 1 op GANGPOT_DEEL planten naar gangpot (nooit van gangpot zelf)
+  // gangpot-afroming: 1 op GANGPOT_DEEL planten naar gangpot (nooit van gangpot zelf; GANGPOT_DEEL 0 = uit)
   L.splitInleg = (user, amount, hasGangpot) => {
-    const gangpot = (hasGangpot && !L.isGangpot(user)) ? Math.floor(amount / R.GANGPOT_DEEL) : 0;
+    const gangpot = (R.GANGPOT_DEEL && hasGangpot && !L.isGangpot(user)) ? Math.floor(amount / R.GANGPOT_DEEL) : 0;
     return { self: amount - gangpot, gangpot };
   };
 
