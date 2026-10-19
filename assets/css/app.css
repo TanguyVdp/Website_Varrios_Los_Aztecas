@@ -1023,7 +1023,13 @@ textarea.input { height: auto; min-height: 64px; padding: 10px 14px; resize: ver
 .dept-badges { display: inline-flex; gap: 6px; }
 
 /* lobby: missies van vandaag (1 tegel, niet klikbaar — afvinken enkel in de Opslag loods) */
-.lh-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lh-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* lobby: volgende activiteit uit de agenda (klikbaar → opent ze in de agenda) */
+.lh-stat.ag-sum { color: inherit; text-decoration: none; transition: border-color .2s, background .2s; }
+.lh-stat.ag-sum:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 7%, rgba(0,0,0,.28)); }
+.ag-sum-title { font-size: 15px; font-weight: 600; line-height: 1.35; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-sum-rs { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; max-width: 100%;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
 .mis-lines { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
 .mis-line { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; min-width: 0; }
 .mis-line i { width: 15px; height: 15px; flex-shrink: 0; border-radius: 4px; display: grid; place-items: center; border: 1.5px solid color-mix(in srgb, var(--accent) 50%, transparent); color: #1b1203; }
@@ -1124,7 +1130,7 @@ textarea.input { height: auto; min-height: 64px; padding: 10px 14px; resize: ver
   .lh-stats > .mis-sum { grid-column: span 2; }
 }@media (max-width: 1023px) {
   .lh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lh-stats > .mis-sum { grid-column: span 2; }
+  .lh-stats > .mis-sum, .lh-stats > .ag-sum { grid-column: span 2; }
 }
 
 /* ---------- rangen + boss-beheertabel ---------- */

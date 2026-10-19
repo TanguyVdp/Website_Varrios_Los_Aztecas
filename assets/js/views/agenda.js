@@ -182,6 +182,12 @@
         const e = ctx.state.events.find(x => x.id === b.dataset.ev);
         if (e) detail(e, ctx);
       }));
+      // #/agenda/<id> (bv. vanuit de lobby): die activiteit meteen openen, daarna de link terug naar #/agenda
+      if (ctx.params[0]) {
+        const e = ctx.state.events.find(x => x.id === ctx.params[0]);
+        history.replaceState(null, '', location.pathname + location.search + '#/agenda');
+        if (e) setTimeout(() => detail(e, ctx), 0);
+      }
     }
   };
 })(window.App);

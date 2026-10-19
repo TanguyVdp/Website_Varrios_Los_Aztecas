@@ -107,6 +107,33 @@
     return `<div class="lh-me">${chips.join('')}</div>`;
   }
 
+  // eerstvolgende activiteit uit de agenda + of jij al geantwoord hebt (aanwezig / misschien / afwezig)
+  function nextEventStat({ state, me }) {
+    const today = U.dkey(new Date());
+    const e = [...(state.events || [])].filter(x => x.datum >= today)
+      .sort((a, b) => a.datum.localeCompare(b.datum) || (a.tijd || '').localeCompare(b.tijd || ''))[0];
+    if (!e) return `
+      <a class="lh-stat ag-sum" href="#/agenda" style="--accent:var(--cyan)">
+        <span class="lh-stat-ic">${I('calendar', 15)}</span>
+        <div><span class="lh-stat-label">Volgende activiteit</span><span class="ag-sum-title dim">Niets gepland</span><span class="lh-stat-sub">bekijk de agenda</span></div>
+      </a>`;
+    const t = App.AGENDA.TYPES.find(x => x.id === e.type) || App.AGENDA.TYPES[App.AGENDA.TYPES.length - 1];
+    const mine = me && (state.rsvps || []).find(r => r.event_id === e.id && r.user_id === me.id);
+    const rs = mine && App.AGENDA.RSVP.find(x => x.id === mine.status);
+    const dag = e.datum === today ? 'Vandaag' : e.datum === U.dkey(U.addDays(new Date(), 1)) ? 'Morgen' : U.dayLabel(e.datum);
+    return `
+      <a class="lh-stat ag-sum" href="#/agenda/${e.id}" style="--accent:var(--${t.tone})" title="Open in de agenda">
+        <span class="lh-stat-ic">${I(t.icon, 15)}</span>
+        <div>
+          <span class="lh-stat-label">Volgende activiteit</span>
+          <span class="ag-sum-title">${U.esc(e.titel)}</span>
+          <span class="lh-stat-sub">${dag}${e.tijd ? ` · ${e.tijd}` : ''}${e.plaats ? ` · ${U.esc(e.plaats)}` : ''}</span>
+          ${rs ? `<span class="ag-sum-rs" style="--accent:var(--${rs.tone})">${I(rs.icon, 11)} Jij: ${rs.label.toLowerCase()}</span>`
+               : `<span class="ag-sum-rs open" style="--accent:var(--warn)">${I('alert', 11)} Nog niet gereageerd</span>`}
+        </div>
+      </a>`;
+  }
+
   function hero(ctx) {
     const { me, snap, state } = ctx;
     const gp = state.users.find(L.isGangpot);
@@ -141,6 +168,7 @@
           <img src="assets/img/logo-mark.png" alt="">
         </div>
         <div class="lh-stats">
+          ${nextEventStat(ctx)}
           ${stat('gold', 'users', 'Familia', `${leden}<small>/${R.MAX_USERS}</small>`, 'actieve leden')}
           ${stat('gold', 'crown', 'Gangpot', '€ ' + U.num(App.gangpotCash(state)), 'cash in de pot')}
           <div class="lh-stat mis-sum" style="--accent:var(--warn)">
