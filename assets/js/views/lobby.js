@@ -137,7 +137,7 @@
   function hero(ctx) {
     const { me, snap, state } = ctx;
     const gp = state.users.find(L.isGangpot);
-    const leden = state.users.filter(u => u.pin && !L.isGangpot(u)).length;
+    const leden = state.users.filter(u => !L.isGangpot(u)).length;
     const q = snap.queueInfo;
     const now = new Date();
     const d = now.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' });

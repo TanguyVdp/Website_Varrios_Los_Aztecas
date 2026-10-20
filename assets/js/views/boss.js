@@ -158,7 +158,7 @@
   function manageModal(u, ctx) {
     const p = ctx.snap.perUser.get(u.id), gp = L.isGangpot(u), who = App.boss.who(ctx);
     C.modal.open(`
-      <div class="profile-head">${C.avatar(u, 52)}<div><h3>${U.esc(u.name)} ${C.rank(u)}</h3><p class="muted small">${u.pin ? 'actief profiel' : 'nog niet geclaimd'} · klaar <b class="lime mono">${U.num(p.momTegoed)}</b> · tegoed <b class="mono">${U.num(p.tegoed)}</b></p></div></div>
+      <div class="profile-head">${C.avatar(u, 52)}<div><h3>${U.esc(u.name)} ${C.rank(u)}</h3><p class="muted small">${u.pin ? 'kan inloggen' : 'nog geen Discord'} · klaar <b class="lime mono">${U.num(p.momTegoed)}</b> · tegoed <b class="mono">${U.num(p.tegoed)}</b></p></div></div>
 
       <div class="mng-block">
         <span class="eyebrow">Gegevens corrigeren</span>

@@ -153,7 +153,8 @@ async function main() {
   const [events, rsvps, users, absences, posts] = await Promise.all([
     sb(`events?select=*&datum=gte.${yesterday}&order=datum.asc`),
     sb('event_rsvps?select=*'),
-    sb('users?select=id,name,discord_id,sort_order&pin_hash=not.is.null&order=sort_order.asc'),
+    // alle profielen (behalve gangpot), ook wie nog nooit ingelogd heeft — zelfde lijst als in de Edge Function
+    sb('users?select=id,name,discord_id,sort_order&order=sort_order.asc'),
     sb('absences?select=user_id,van,tot&status=neq.afgekeurd'),
     sb('agenda_discord?select=*')
   ]);

@@ -8,7 +8,7 @@
   const sortEv = (a, b) => (a.datum + (a.tijd || '')).localeCompare(b.datum + (b.tijd || ''));
   const RS = App.AGENDA.RSVP;
   const rsvpOf = id => RS.find(r => r.id === id);
-  const leden = state => state.users.filter(u => u.pin && !App.L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
+  const leden = state => state.users.filter(u => !App.L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
   const absentOn = (state, k) => (state.absences || []).filter(a => a.status !== 'afgekeurd' && a.van <= k && a.tot >= k);
 
   function relDay(k) {

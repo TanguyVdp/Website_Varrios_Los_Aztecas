@@ -104,9 +104,10 @@ async function loadForEvent(eventId: string) {
   const [{ data: ev }, { data: rsvps }, { data: members }] = await Promise.all([
     sb.from("events").select("*").eq("id", eventId).maybeSingle(),
     sb.from("event_rsvps").select("*").eq("event_id", eventId),
-    sb.from("users").select("id,name,sort_order").not("pin_hash", "is", null).order("sort_order"),
+    // alle profielen (behalve gangpot), ook wie nog nooit ingelogd heeft — zelfde lijst als in agenda-bot.mjs
+    sb.from("users").select("id,name,sort_order").order("sort_order"),
   ]);
-  return { ev, rsvps: rsvps ?? [], members: (members ?? []).filter((u) => u.name.toLowerCase() !== "gangpot") };
+  return { ev, rsvps: rsvps ?? [], members: (members ?? []).filter((u) => u.name.trim().toLowerCase() !== "gangpot") };
 }
 
 Deno.serve(async (req) => {

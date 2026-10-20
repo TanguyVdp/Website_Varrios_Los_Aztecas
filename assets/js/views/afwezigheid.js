@@ -6,7 +6,7 @@
   const PLAN_DAYS = 21;
 
   const reasonOf = id => A.REASONS.find(r => r.id === id) || A.REASONS[A.REASONS.length - 1];
-  const members = state => state.users.filter(u => u.pin && !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
+  const members = state => state.users.filter(u => !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
 
   // gedeeld met de lobby: indeling van alle afwezigheden t.o.v. vandaag
   App.absInfo = state => {
