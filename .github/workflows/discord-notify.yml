@@ -38,6 +38,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_AGENDA_CHANNEL_ID: ${{ secrets.DISCORD_AGENDA_CHANNEL_ID }}
+          DISCORD_MEDEDELINGEN_CHANNEL_ID: ${{ secrets.DISCORD_MEDEDELINGEN_CHANNEL_ID }}
+          DISCORD_MEDEDELINGEN_ROLE_ID: ${{ secrets.DISCORD_MEDEDELINGEN_ROLE_ID }}
         run: node .github/scripts/agenda-bot.mjs
 
       - name: Bewaar meld-status

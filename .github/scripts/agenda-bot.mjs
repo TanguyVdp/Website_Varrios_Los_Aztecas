@@ -9,14 +9,18 @@
 //     (wie die dag als afwezig gemeld staat, wordt overgeslagen). DM's die niet lukken
 //     (DM's uitgeschakeld) → één vermelding in het kanaal.
 //  4. Activiteit begonnen → knoppen uit. Activiteit verwijderd → bericht op "geannuleerd".
+//  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel "Dringend" tagt de rol
+//     @Varrios Los Aztecas, via DISCORD_MEDEDELINGEN_ROLE_ID);
+//     mededeling verwijderd op de site → bericht ook weg uit Discord.
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
-// Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL).
-// Ontbreekt er één, dan doet dit script niets (zodat de zakjes-melding gewoon blijft werken).
+// Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
+// DISCORD_MEDEDELINGEN_CHANNEL_ID — zonder dat kanaal worden mededelingen gewoon overgeslagen).
+// Ontbreekt er één van de verplichte, dan doet dit script niets (zodat de zakjes-melding gewoon blijft werken).
 // buildMessage() is een kopie van die in de Edge Function — hou ze gelijk.
 // ============================================================
 
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID } = process.env;
+const { SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID, DISCORD_MEDEDELINGEN_CHANNEL_ID } = process.env;
 const SITE_URL = (process.env.SITE_URL || 'https://tanguyvdp.github.io/Website_Varrios_Los_Aztecas/').replace(/\/?$/, '/');
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !DISCORD_BOT_TOKEN || !DISCORD_AGENDA_CHANNEL_ID) {
   console.log('Agenda-bot nog niet ingesteld (secrets ontbreken) — overgeslagen.');
@@ -226,4 +230,47 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+// ---------- mededelingen ----------
+const SOORT = {
+  info:       { label: 'Mededeling',           emoji: '📢', color: 0x22d3ee },
+  belangrijk: { label: 'Belangrijke mededeling', emoji: '⚠️', color: 0xf0b24e },
+  dringend:   { label: 'Dringende mededeling',  emoji: '🚨', color: 0xef4444 }
+};
+const ROLE_ID = String(process.env.DISCORD_MEDEDELINGEN_ROLE_ID || '').trim();
+async function notices() {
+  if (!DISCORD_MEDEDELINGEN_CHANNEL_ID) { console.log('Geen mededelingen-kanaal ingesteld — overgeslagen.'); return; }
+  const [list, posts] = await Promise.all([sb('notices?select=*&order=created_at.asc'), sb('notice_discord?select=*')]);
+  const ids = new Set(list.map(n => n.id));
+  const posted = new Set(posts.map(p => p.notice_id));
+
+  // verwijderd op de site → ook weg uit Discord
+  for (const p of posts) {
+    if (ids.has(p.notice_id)) continue;
+    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
+    catch (e) { if (e.status !== 404) { console.log(`Mededeling verwijderen: ${e.message}`); continue; } }
+    await sbDelete('notice_discord', `notice_id=eq.${p.notice_id}`);
+    console.log(`Mededeling verwijderd uit Discord: ${p.notice_id}`);
+  }
+
+  // nieuw → posten (enkel van de laatste 24u, zodat oude mededelingen er niet ineens allemaal in komen)
+  const since = Date.now() - 24 * HOUR;
+  for (const n of list) {
+    if (posted.has(n.id) || new Date(n.created_at).getTime() < since) continue;
+    const s = SOORT[n.soort] || SOORT.info;
+    // enkel "Dringend" tagt de rol @Varrios Los Aztecas (DISCORD_MEDEDELINGEN_ROLE_ID); zonder rol-ID: niemand taggen
+    const ping = n.soort === 'dringend' && /^\d+$/.test(ROLE_ID);
+    const sent = await discord(`/channels/${DISCORD_MEDEDELINGEN_CHANNEL_ID}/messages`, 'POST', {
+      content: ping ? `<@&${ROLE_ID}> ${s.emoji} **${s.label}!**` : `${s.emoji} **${s.label}${n.soort === 'dringend' ? '!' : ''}**`,
+      allowed_mentions: { parse: [], roles: ping ? [ROLE_ID] : [] },
+      embeds: [{ title: n.titel, description: n.tekst, color: s.color, timestamp: n.created_at, footer: { text: `${n.door || 'Boss'} · Varrios gangportaal` } }],
+      components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open de lobby', url: `${SITE_URL}#/lobby` }] }]
+    });
+    await sbInsert('notice_discord', { notice_id: n.id, channel_id: DISCORD_MEDEDELINGEN_CHANNEL_ID, message_id: sent.id });
+    console.log(`Mededeling gepost: ${n.titel}${ping ? ' (rol getagd)' : ''}`);
+  }
+}
+
+// agenda en mededelingen los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices()]);
+results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
+if (results.some(r => r.status === 'rejected')) process.exit(1);
