@@ -1,5 +1,5 @@
 /* Agenda: maandkalender + eerstvolgende activiteiten. De Boss plaatst activiteiten (boss.js → Agenda),
- * leden melden zich aan: aanwezig / misschien / afwezig (reden verplicht). Per dag zie je ook wie er afwezig is. */
+ * leden melden zich aan: aanwezig / misschien / afwezig (reden verplicht: keuze uit App.AGENDA.AFWEZIG of zelf typen) — ook via de Discord-bot. Per dag zie je ook wie er afwezig is. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, T = App.AGENDA.TYPES;
   const ui = { month: null };   // eerste dag van de getoonde maand ('YYYY-MM-DD'), null = deze maand
@@ -47,6 +47,25 @@
       </div>`;
   };
 
+  // reden bij afwezig: "Werk" / "Werk — late shift" / vrije tekst (= andere) ↔ { reden: id, extra }
+  const AFW = App.AGENDA.AFWEZIG;
+  function parseReden(txt, mijnAfw) {
+    if (txt) {
+      const o = AFW.find(r => r.id !== 'andere' && (txt === r.label || txt.startsWith(r.label + ' — ')));
+      return o ? { reden: o.id, extra: txt.slice(o.label.length + 3) } : { reden: 'andere', extra: txt };
+    }
+    // afwezig gemeld die dag → die reden alvast voorstellen
+    if (mijnAfw && AFW.some(r => r.id === mijnAfw.reden)) return { reden: mijnAfw.reden, extra: mijnAfw.toelichting || '' };
+    return { reden: null, extra: '' };
+  }
+  function composeReden(id, extra) {
+    extra = String(extra || '').trim();
+    if (!id) return '';
+    if (id === 'andere') return extra;
+    const o = AFW.find(r => r.id === id);
+    return (o.label + (extra ? ' — ' + extra : '')).slice(0, 140);
+  }
+
   function detail(e, ctx) {
     const { state, me } = ctx;
     const t = typeOf(e.type), d = U.parseDay(e.datum), r = relDay(e.datum);
@@ -54,7 +73,7 @@
     const rs = (state.rsvps || []).filter(x => x.event_id === e.id);
     const mine = me && rs.find(x => x.user_id === me.id);
     const mijnAfw = me && weg.find(a => a.user_id === me.id);
-    const sel = { status: mine ? mine.status : (mijnAfw ? 'afwezig' : null) };
+    const sel = { status: mine ? mine.status : (mijnAfw ? 'afwezig' : null), ...parseReden(mine && mine.status === 'afwezig' ? mine.reden : null, mijnAfw) };
     const geantwoord = new Set(rs.map(x => x.user_id));
     const nogNiet = leden(state).filter(u => !geantwoord.has(u.id));
     const group = s => { const list = rs.filter(x => x.status === s.id); return `
@@ -78,8 +97,11 @@
       <form class="rs-form" id="rs-form" autocomplete="off">
         <span class="eyebrow">Ben jij erbij?</span>
         <div class="rs-opts">${RS.map(s => `<button type="button" class="reason ${sel.status === s.id ? 'on' : ''}" data-rs="${s.id}" style="--accent:var(--${s.tone})">${I(s.icon, 16)}<span>${s.label}</span></button>`).join('')}</div>
-        <label class="field" id="rs-reden-wrap" ${sel.status === 'afwezig' ? '' : 'hidden'}><span>Reden <em>(verplicht)</em></span>
-          <input class="input" id="rs-reden" maxlength="140" placeholder="Waarom kan je er niet bij zijn?" value="${U.esc(mine && mine.reden ? mine.reden : mijnAfw ? (App.ABSENCE.REASONS.find(x => x.id === mijnAfw.reden) || {}).label || '' : '')}"></label>
+        <div class="field" id="rs-reden-wrap" ${sel.status === 'afwezig' ? '' : 'hidden'}>
+          <span>Waarom ben je er niet bij? <em>(verplicht)</em></span>
+          <div class="reason-grid">${AFW.map(r => `<button type="button" class="reason ${sel.reden === r.id ? 'on' : ''}" data-rr="${r.id}" style="--accent:var(--${r.tone})">${I(r.icon, 15)}<span>${r.label}</span></button>`).join('')}</div>
+          <input class="input" id="rs-reden" maxlength="110" placeholder="${sel.reden === 'andere' ? 'Typ je reden' : 'Toelichting (optioneel)'}" value="${U.esc(sel.extra || '')}">
+        </div>
         ${mijnAfw && !mine ? `<p class="muted small">${I('userx', 12)} Je staat die dag als afwezig gemeld.</p>` : ''}
         <div class="err" id="rs-err"></div>
         <button class="btn cyan block" type="submit" id="rs-save" ${sel.status ? '' : 'disabled'}>${mine ? 'Antwoord wijzigen' : 'Antwoord opslaan'}</button>
@@ -95,13 +117,19 @@
         modal.querySelectorAll('[data-rs]').forEach(x => x.classList.toggle('on', x === b));
         wrap.hidden = sel.status !== 'afwezig';
         modal.querySelector('#rs-save').disabled = false;
-        if (sel.status === 'afwezig') modal.querySelector('#rs-reden').focus();
+      }));
+      const txt = modal.querySelector('#rs-reden');
+      modal.querySelectorAll('[data-rr]').forEach(b => b.addEventListener('click', () => {
+        sel.reden = b.dataset.rr;
+        modal.querySelectorAll('[data-rr]').forEach(x => x.classList.toggle('on', x === b));
+        txt.placeholder = sel.reden === 'andere' ? 'Typ je reden' : 'Toelichting (optioneel)';
+        if (sel.reden === 'andere') txt.focus();
       }));
       form.addEventListener('submit', ev => {
         ev.preventDefault();
         C.busy(modal.querySelector('#rs-save'), async () => {
           try {
-            await App.store.setRsvp(e.id, me.id, sel.status, sel.status === 'afwezig' ? modal.querySelector('#rs-reden').value : '');
+            await App.store.setRsvp(e.id, me.id, sel.status, sel.status === 'afwezig' ? composeReden(sel.reden, txt.value) : '');
             C.modal.close(); C.toast(`Aangemeld als ${rsvpOf(sel.status).label.toLowerCase()}`);
           } catch (ex) { modal.querySelector('#rs-err').textContent = U.friendlyError(ex); }
         });

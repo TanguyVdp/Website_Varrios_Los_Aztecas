@@ -440,6 +440,7 @@
 
     // ---- agenda ----
     async setRsvp(eventId, userId, status, reden) {
+      if (status === 'afwezig' && !String(reden || '').trim()) throw E('REDEN_NODIG');
       await rpc('fn_set_rsvp', { p_event_id: eventId, p_user_id: userId, p_status: status, p_reden: reden || null });
       await after(['rsvps']);
     },

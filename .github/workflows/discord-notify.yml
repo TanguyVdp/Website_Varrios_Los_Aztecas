@@ -30,6 +30,16 @@ jobs:
       - name: Check wachtrij en meld klare zakjes
         run: node .github/scripts/discord-notify.mjs
 
+      # agenda-bot: nieuwe activiteiten posten, antwoorden bijhouden, herinneringen (24u/2u) per DM
+      # (doet niets zolang de secrets niet ingesteld zijn; een fout hier stopt de zakjes-melding niet)
+      - name: Agenda-bot (Discord)
+        continue-on-error: true
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_AGENDA_CHANNEL_ID: ${{ secrets.DISCORD_AGENDA_CHANNEL_ID }}
+        run: node .github/scripts/agenda-bot.mjs
+
       - name: Bewaar meld-status
         run: |
           git add .github/state/discord-notified.json

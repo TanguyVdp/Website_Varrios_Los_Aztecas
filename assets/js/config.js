@@ -147,11 +147,23 @@ App.BASE_ITEM = 'Base';
 // Wekelijkse gangpot-bijdrage: te betalen tegen deze weekdag (0 = zondag … 3 = woensdag). De Boss vinkt af wie betaald heeft.
 App.GANGPOT_DUE_DAY = 3;
 
-// Agenda: aanmelden per activiteit. Bij 'afwezig' is een reden verplicht.
+// Agenda: aanmelden per activiteit (op de site of via de knoppen van de Discord-bot).
+// Bij 'afwezig' is een reden verplicht: één van App.AGENDA.AFWEZIG (bij 'andere' zelf typen).
+// Opgeslagen als tekst: "Werk", "Werk — late shift" of bij andere de getypte tekst.
+// ⚠️ Zelfde lijst in de Discord-bot: supabase/functions/discord-agenda/index.ts (REDENEN).
 App.AGENDA.RSVP = [
   { id: 'aanwezig',  label: 'Aanwezig',  icon: 'check',   tone: 'lime' },
   { id: 'misschien', label: 'Misschien', icon: 'clock',   tone: 'warn' },
   { id: 'afwezig',   label: 'Afwezig',   icon: 'x',       tone: 'danger' }
+];
+App.AGENDA.AFWEZIG = [
+  { id: 'werk',     label: 'Werk',     icon: 'briefcase', tone: 'violet' },
+  { id: 'school',   label: 'School',   icon: 'pencil',    tone: 'sky' },
+  { id: 'prive',    label: 'Privé',    icon: 'home',      tone: 'gold' },
+  { id: 'ziek',     label: 'Ziek',     icon: 'thermo',    tone: 'danger' },
+  { id: 'familie',  label: 'Familie',  icon: 'heart',     tone: 'rose' },
+  { id: 'vakantie', label: 'Vakantie', icon: 'sun',       tone: 'cyan' },
+  { id: 'andere',   label: 'Andere',   icon: 'dots',      tone: 'muted' }
 ];
 
 // Mededelingen in de lobby
@@ -203,7 +215,7 @@ App.ERR = {
   MISSIE_AL_GEDAAN: 'Deze missie is vandaag al gedaan.',
   ONGELDIGE_MISSIE: 'Onbekende missie.',
   EVENT_VOORBIJ: 'Deze activiteit is al voorbij.',
-  REDEN_NODIG: 'Geef een reden waarom je er niet bij bent.',
+  REDEN_NODIG: 'Kies een reden waarom je er niet bij bent (bij "Andere": typ ze zelf).',
   GANGPOT_PROFIEL: 'Het gangpot-profiel kan je niet verwijderen.',
   ONGELDIGE_WAARDE: 'Voer overal een geldig getal (0 of meer) in.',
   ONGELDIGE_RANG: 'Kies een geldige rang.',
