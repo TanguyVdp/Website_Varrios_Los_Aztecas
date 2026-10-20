@@ -81,7 +81,7 @@ klanten) en het volledige logboek van alle 25 profielen samen, filterbaar
 op persoon.
 
 Stel de bosscode in via `supabase/update-boss-menu.sql` (regel met
-`encode(digest('2525', 'sha256'), ...)` — vervang `'2525'` door je eigen
+`encode(digest('XXXX', 'sha256'), ...)` — vervang `'XXXX'` door je eigen
 code) en voer dat bestand eenmalig uit in de SQL Editor, na `schema.sql`.
 Je kan de code later wijzigen door diezelfde regel opnieuw uit te voeren
 met een nieuwe waarde.

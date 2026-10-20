@@ -222,6 +222,7 @@ App.ERR = {
   ONGELDIGE_VOLGORDE: 'Die volgorde klopt niet — herlaad de pagina.',
   GEEN_TOEGANG: 'Je hebt geen toegang tot deze afdeling.',
   ONJUISTE_HUIDIGE_CODE: 'Je huidige code klopt niet.',
+  TE_VEEL_POGINGEN: 'Te veel foute codes na elkaar — probeer het over 15 minuten opnieuw.',
   CODES_VERSCHILLEN: 'De twee nieuwe codes zijn niet hetzelfde.',
   ONGELDIGE_FOTO: 'Kies een geldige afbeelding (jpg, png, webp …).',
   ONGELDIGE_LEVERING: 'Kies of je de mengproducten zelf aanlevert of laat aankopen.',

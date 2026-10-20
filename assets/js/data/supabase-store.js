@@ -12,7 +12,7 @@
   const subs = new Set();
   const E = code => new Error(code);
 
-  // codes worden gehasht bewaard voor deze browsersessie (zoals de oude app met de bosscode)
+  // geheime sleutels (24u) die de database teruggeeft na een juiste boss-/opslag-/gangpot-code (zie update-v2-beveiliging.sql)
   const HASH = { boss: 'varrios-v2-boss-h', opslag: 'varrios-v2-opslag-h', gangpot: 'varrios-v2-gangpot-h' };
   const ss = {
     get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
@@ -206,8 +206,8 @@
       return userById(u.id);
     },
     async changePin(userId, oldPin, newPin) {
-      try { await rpc('fn_change_pin', { p_user_id: userId, p_old_pin_hash: await sha256(oldPin), p_new_pin_hash: await sha256(pin4(newPin)) }); }
-      catch (e) { throw e.message === 'ONJUISTE_CODE' ? E('ONJUISTE_HUIDIGE_CODE') : e; }
+      const ok = await rpc('fn_change_pin', { p_user_id: userId, p_old_pin_hash: await sha256(oldPin), p_new_pin_hash: await sha256(pin4(newPin)) });
+      if (!ok) throw E('ONJUISTE_HUIDIGE_CODE');
     },
     // profielfoto: upload naar Storage-bucket 'avatars' (zoals de oude app), daarna de publieke URL opslaan
     async setAvatar(userId, dataUrl) {
@@ -262,10 +262,11 @@
     },
 
     // ---- boss ----
+    // de code wordt één keer gecontroleerd (met limiet op foute pogingen); daarna werken we met een sleutel van 24u
     async verifyBoss(code) {
-      const h = await sha256(String(code || ''));
-      if (!(await rpc('fn_verify_boss', { p_pin_hash: h }))) throw E('ONJUISTE_BOSSCODE');
-      ss.set(HASH.boss, h);
+      const token = await rpc('fn_boss_login', { p_pin_hash: await sha256(String(code || '')) });
+      if (!token) throw E('ONJUISTE_BOSSCODE');
+      ss.set(HASH.boss, token);
       return true;
     },
     async setBaseline(patch, byName) {
@@ -343,10 +344,10 @@
       await after(['gpItems']);
     },
     async verifyGangpot(code) {
-      const h = await sha256(String(code || ''));
-      const v = await rpc('fn_verify_gangpot', { p_pin_hash: h });
-      ss.set(HASH.gangpot, h);
-      if (state.settings.gangpot_code !== 'v' + v) await after(['settings']);
+      const r = await rpc('fn_gangpot_login', { p_pin_hash: await sha256(String(code || '')) });
+      if (!r) throw E('ONJUISTE_GANGPOTCODE');
+      ss.set(HASH.gangpot, r.token);
+      if (state.settings.gangpot_code !== 'v' + r.v) await after(['settings']);
       return true;
     },
     async setGangpotCode(code) {
@@ -363,10 +364,10 @@
 
     // ---- opslag loods (opslag-code of bosscode) ----
     async verifyOpslag(code) {
-      const h = await sha256(String(code || ''));
-      const v = await rpc('fn_verify_opslag', { p_pin_hash: h });
-      ss.set(HASH.opslag, h);
-      if (state.settings.opslag_code !== 'v' + v) await after(['settings']);
+      const r = await rpc('fn_opslag_login', { p_pin_hash: await sha256(String(code || '')) });
+      if (!r) throw E('ONJUISTE_OPSLAGCODE');
+      ss.set(HASH.opslag, r.token);
+      if (state.settings.opslag_code !== 'v' + r.v) await after(['settings']);
       return true;
     },
     async setOpslagCode(code) {

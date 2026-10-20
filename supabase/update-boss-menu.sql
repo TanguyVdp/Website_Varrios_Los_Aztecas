@@ -14,10 +14,10 @@ create table if not exists admin_config (
 insert into admin_config (id, boss_pin_hash) values (true, null)
   on conflict (id) do nothing;
 
--- Stel hier ZELF je bosscode in — vervang '2525' door de code die jullie willen
+-- Stel hier ZELF je bosscode in — vervang 'XXXX' door de code die jullie willen
 -- gebruiken (cijfers of tekst, minstens 4 tekens). Deze regel bewaart enkel een
 -- versleutelde hash, nooit de code zelf.
-update admin_config set boss_pin_hash = encode(digest('2525', 'sha256'), 'hex') where id = true;
+update admin_config set boss_pin_hash = encode(digest('XXXX', 'sha256'), 'hex') where id = true;
 
 alter table admin_config enable row level security;
 -- Bewust GEEN select-policy: de hash mag nooit naar de browser, enkel de
