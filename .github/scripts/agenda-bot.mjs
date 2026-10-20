@@ -237,6 +237,24 @@ const SOORT = {
   dringend:   { label: 'Dringende mededeling',  emoji: '🚨', color: 0xef4444 }
 };
 const ROLE_ID = String(process.env.DISCORD_MEDEDELINGEN_ROLE_ID || '').trim();
+// Components V2: [tag] + kader (kleur van de soort) met banner per soort (assets/img/discord/), titel, tekst,
+// lijn, wie/wanneer met de knop naar de lobby ernaast
+function noticeComponents(n, s, ping) {
+  const unix = Math.floor(new Date(n.created_at).getTime() / 1000);
+  const soort = SOORT[n.soort] ? n.soort : 'info';
+  const box = {
+    type: 17, accent_color: s.color, components: [
+      { type: 12, items: [{ media: { url: `${SITE_URL}assets/img/discord/mededeling-${soort}.png` }, description: s.label }] },
+      { type: 10, content: `# ${n.titel}` },
+      { type: 10, content: n.tekst },
+      { type: 14, divider: true, spacing: 2 },
+      { type: 9,
+        components: [{ type: 10, content: `-# Geplaatst door\n**🛡️ ${n.door || 'Boss'}**\n-# <t:${unix}:f> · <t:${unix}:R>` }],
+        accessory: { type: 2, style: 5, label: 'Open de lobby', emoji: { name: '🏠' }, url: `${SITE_URL}#/lobby` } }
+    ]
+  };
+  return ping ? [{ type: 10, content: `🔔 <@&${ROLE_ID}>` }, box] : [box];
+}
 async function notices() {
   if (!DISCORD_MEDEDELINGEN_CHANNEL_ID) { console.log('Geen mededelingen-kanaal ingesteld — overgeslagen.'); return; }
   const [list, posts] = await Promise.all([sb('notices?select=*&order=created_at.asc'), sb('notice_discord?select=*')]);
@@ -259,12 +277,10 @@ async function notices() {
     const s = SOORT[n.soort] || SOORT.info;
     // enkel aangevinkt ("Tag in Discord") tagt de rol @Varrios Los Aztecas (DISCORD_MEDEDELINGEN_ROLE_ID); zonder rol-ID: niemand taggen
     const ping = n.tag === true && /^\d+$/.test(ROLE_ID);
-    const head = `${s.emoji} **${s.label}${n.soort === 'dringend' ? '!' : ''}**`;
     const sent = await discord(`/channels/${DISCORD_MEDEDELINGEN_CHANNEL_ID}/messages`, 'POST', {
-      content: ping ? `<@&${ROLE_ID}> ${head}` : head,
+      flags: 1 << 15,   // IS_COMPONENTS_V2: kader met kleur + logo i.p.v. een embed (geen content/embeds toegelaten)
       allowed_mentions: { parse: [], roles: ping ? [ROLE_ID] : [] },
-      embeds: [{ title: n.titel, description: n.tekst, color: s.color, timestamp: n.created_at, footer: { text: `${n.door || 'Boss'} · Varrios gangportaal` } }],
-      components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open de lobby', url: `${SITE_URL}#/lobby` }] }]
+      components: noticeComponents(n, s, ping)
     });
     await sbInsert('notice_discord', { notice_id: n.id, channel_id: DISCORD_MEDEDELINGEN_CHANNEL_ID, message_id: sent.id });
     console.log(`Mededeling gepost: ${n.titel}${ping ? ' (rol getagd)' : ''}`);
