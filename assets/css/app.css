@@ -796,6 +796,10 @@ body.is-public .view { max-width: 1200px; padding: 20px 36px 60px; }
 .reason .ic { color: var(--accent); }
 .reason:hover { border-color: var(--line-2); color: var(--text); }
 .reason.on { color: var(--text); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
+.tag-chk { align-self: flex-start; }
+.tag-chk .box { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line-2); color: transparent; transition: all .15s; }
+.tag-chk.on .box { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tag-chk .box .ic { color: inherit; }
 textarea.input { height: auto; min-height: 64px; padding: 10px 14px; resize: vertical; line-height: 1.45; }
 .af-sum:empty { display: none; }
 .af-sum { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 11px; font-size: 13px; color: var(--text-2); background: var(--rose-soft); border: 1px solid rgba(240,127,191,.22); }

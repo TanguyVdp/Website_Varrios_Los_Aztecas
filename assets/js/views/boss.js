@@ -549,7 +549,7 @@
   }
 
   // ---- mededelingen ----
-  const ui2 = { soort: 'info', type: 'vergadering', datum: null, abs: 'aangevraagd' };
+  const ui2 = { soort: 'info', tag: false, type: 'vergadering', datum: null, abs: 'aangevraagd' };
   function sMededeling({ state }) {
     const K = App.NOTICE.KINDS;
     return `
@@ -560,6 +560,9 @@
             <label class="field"><span>Titel</span><input class="input" id="nt-titel" maxlength="80" placeholder="bv. Vergadering verplaatst"></label>
             <label class="field"><span>Bericht</span><textarea class="input" id="nt-tekst" rows="4" maxlength="400" placeholder="Wat moet de familia weten?"></textarea></label>
             <div class="field"><span>Soort</span><div class="reason-grid">${K.map(k => `<button type="button" class="reason ${ui2.soort === k.id ? 'on' : ''}" data-soort="${k.id}" style="--accent:var(--${k.tone})">${I(k.icon, 16)}<span>${k.label}</span></button>`).join('')}</div></div>
+            <div class="field"><span>Tag in Discord</span>
+              <button type="button" class="reason tag-chk ${ui2.tag ? 'on' : ''}" id="nt-tag" aria-pressed="${ui2.tag}" style="--accent:var(--violet)"><span class="box">${I('check', 12)}</span><span>@Varrios Los Aztecas taggen</span></button>
+              <small class="muted">Aangevinkt = iedereen met die rol krijgt een melding in Discord.</small></div>
             <div class="err" id="nt-err"></div>
             <button class="btn gold block lg" type="submit">${I('megaphone', 16)} Plaatsen in de lobby</button>
           </form>
@@ -846,11 +849,13 @@
         root.querySelectorAll('[data-soort]').forEach(b => b.addEventListener('click', () => {
           ui2.soort = b.dataset.soort; root.querySelectorAll('[data-soort]').forEach(x => x.classList.toggle('on', x === b));
         }));
+        const tagBtn = root.querySelector('#nt-tag');
+        tagBtn.addEventListener('click', () => { ui2.tag = !ui2.tag; tagBtn.classList.toggle('on', ui2.tag); tagBtn.setAttribute('aria-pressed', ui2.tag); });
         const form = root.querySelector('#nt-form');
         form.addEventListener('submit', e => {
           e.preventDefault();
           C.busy(form.querySelector('button[type=submit]'), async () => {
-            try { await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort }, who); C.toast('Mededeling staat in de lobby'); }
+            try { await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort, tag: ui2.tag }, who); ui2.tag = false; C.toast('Mededeling staat in de lobby'); }
             catch (ex) { root.querySelector('#nt-err').textContent = U.friendlyError(ex); }
           });
         });

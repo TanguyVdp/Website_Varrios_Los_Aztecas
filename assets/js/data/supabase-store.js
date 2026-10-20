@@ -306,8 +306,8 @@
       await rpc('fn_review_absence', { p_id: id, p_status: status || null, p_reactie: reactie || null, p_door: door, p_boss_pin_hash: needBoss() });
       await after(['absences']);
     },
-    async addMededeling({ titel, tekst, soort }, door) {
-      await rpc('fn_add_notice', { p_titel: titel || '', p_tekst: tekst || '', p_soort: soort || null, p_door: door, p_boss_pin_hash: needBoss() });
+    async addMededeling({ titel, tekst, soort, tag }, door) {
+      await rpc('fn_add_notice', { p_titel: titel || '', p_tekst: tekst || '', p_soort: soort || null, p_door: door, p_boss_pin_hash: needBoss(), p_tag: !!tag });
       await after(['notices']);
     },
     async deleteMededeling(id) {

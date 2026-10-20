@@ -9,8 +9,8 @@
 //     (wie die dag als afwezig gemeld staat, wordt overgeslagen). DM's die niet lukken
 //     (DM's uitgeschakeld) → één vermelding in het kanaal.
 //  4. Activiteit begonnen → knoppen uit. Activiteit verwijderd → bericht op "geannuleerd".
-//  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel "Dringend" tagt de rol
-//     @Varrios Los Aztecas, via DISCORD_MEDEDELINGEN_ROLE_ID);
+//  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
+//     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
 //     mededeling verwijderd op de site → bericht ook weg uit Discord.
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
@@ -257,10 +257,11 @@ async function notices() {
   for (const n of list) {
     if (posted.has(n.id) || new Date(n.created_at).getTime() < since) continue;
     const s = SOORT[n.soort] || SOORT.info;
-    // enkel "Dringend" tagt de rol @Varrios Los Aztecas (DISCORD_MEDEDELINGEN_ROLE_ID); zonder rol-ID: niemand taggen
-    const ping = n.soort === 'dringend' && /^\d+$/.test(ROLE_ID);
+    // enkel aangevinkt ("Tag in Discord") tagt de rol @Varrios Los Aztecas (DISCORD_MEDEDELINGEN_ROLE_ID); zonder rol-ID: niemand taggen
+    const ping = n.tag === true && /^\d+$/.test(ROLE_ID);
+    const head = `${s.emoji} **${s.label}${n.soort === 'dringend' ? '!' : ''}**`;
     const sent = await discord(`/channels/${DISCORD_MEDEDELINGEN_CHANNEL_ID}/messages`, 'POST', {
-      content: ping ? `<@&${ROLE_ID}> ${s.emoji} **${s.label}!**` : `${s.emoji} **${s.label}${n.soort === 'dringend' ? '!' : ''}**`,
+      content: ping ? `<@&${ROLE_ID}> ${head}` : head,
       allowed_mentions: { parse: [], roles: ping ? [ROLE_ID] : [] },
       embeds: [{ title: n.titel, description: n.tekst, color: s.color, timestamp: n.created_at, footer: { text: `${n.door || 'Boss'} · Varrios gangportaal` } }],
       components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open de lobby', url: `${SITE_URL}#/lobby` }] }]

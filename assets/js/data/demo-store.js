@@ -478,13 +478,13 @@
       Object.assign(a, { beoordeeld_door: door, beoordeeld_at: iso(Date.now()) });
       commit();
     },
-    async addMededeling({ titel, tekst, soort }, door) {
+    async addMededeling({ titel, tekst, soort, tag }, door) {
       await latency();
       titel = String(titel || '').trim().slice(0, 80); tekst = String(tekst || '').trim().slice(0, 400);
       if (!titel) throw E('GEEN_TITEL');
       if (!tekst) throw E('GEEN_TEKST');
       if (!App.NOTICE.KINDS.some(k => k.id === soort)) throw E('ONGELDIG_TYPE');
-      state.notices.unshift({ id: U.uid(), titel, tekst, soort, door, created_at: iso(Date.now()) });
+      state.notices.unshift({ id: U.uid(), titel, tekst, soort, tag: !!tag, door, created_at: iso(Date.now()) });
       commit();
     },
     async deleteMededeling(id) {
