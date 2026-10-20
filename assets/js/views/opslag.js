@@ -1,15 +1,11 @@
-/* Opslag loods: enkel met de opslag-code. Elke dag 2 missies (App.MISSIONS) die elk maar één keer per dag
- * afgevinkt kunnen worden — daarna staan ze vast. Base coke = automatisch +600 base in de gangpot;
- * de voorraad base kan hier ook bijgeteld of verminderd worden (bv. verkocht). */
+/* Opslag loods: enkel met het vinkje "Opslag loods" (of Boss menu) in de Ledenlijst — app.js toont anders "Geen toegang".
+ * Elke dag 2 missies (App.MISSIONS) die elk maar één keer per dag afgevinkt kunnen worden — daarna staan ze vast.
+ * Base coke = automatisch +600 base in de gangpot; de voorraad base kan hier ook bijgeteld of verminderd worden (bv. verkocht). */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, M = App.MISSIONS;
-  const KEY = 'varrios-v2-opslag';
 
-  // de sessie onthoudt de code (demo) of haar versie (supabase): wijzigt de Boss de code, dan is iedereen meteen weer vergrendeld
   App.opslag = {
-    unlocked: () => { try { return sessionStorage.getItem(KEY) === App.store.state.settings.opslag_code; } catch (e) { return false; } },
-    unlock: code => { try { sessionStorage.setItem(KEY, code); } catch (e) { /* */ } },
-    lock: silent => { try { sessionStorage.removeItem(KEY); } catch (e) { /* */ } if (!silent) C.toast('Opslag loods vergrendeld'); App.rerender(); }
+    unlocked: () => App.can('opslag')
   };
 
   // status van vandaag, gedeeld met de lobby
@@ -18,39 +14,6 @@
     return M.map(m => ({ m, done: state.missions.find(x => x.datum === t && x.type === m.id) || null }));
   };
   App.baseItem = state => state.gangpot.items.find(i => i.naam === App.BASE_ITEM) || { naam: App.BASE_ITEM, eenheid: 'stuks', aantal: 0 };
-
-  function lockView() {
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
-    return `
-      <section class="card boss-lock op-lock">
-        <span class="lock-ic">${I('box', 26)}</span>
-        <h2>Opslag loods</h2>
-        <p class="muted">Deze afdeling is afgeschermd. Voer de opslag-code in.${App.store.mode === 'demo' ? ` <span class="dim">(demo: ${U.esc(App.store.state.settings.opslag_code)})</span>` : ''}</p>
-        <div class="pin-dots" id="pin-dots">${'<i></i>'.repeat(4)}</div>
-        <div class="err center" id="op-err"></div>
-        <div class="keypad">${keys.map(k => k === '' ? '<span></span>' : `<button type="button" class="key" data-key="${k}">${k}</button>`).join('')}</div>
-      </section>`;
-  }
-
-  function bindLock(root) {
-    let code = '';
-    const dots = root.querySelector('#pin-dots'), err = root.querySelector('#op-err');
-    const paint = () => dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < code.length));
-    const press = async k => {
-      if (k === '⌫') code = code.slice(0, -1); else if (code.length < 4) code += k;
-      err.textContent = ''; paint();
-      if (code.length === 4) {
-        try { await App.store.verifyOpslag(code); App.opslag.unlock(App.store.state.settings.opslag_code); C.toast('Opslag loods geopend'); App.rerender(); }
-        catch (ex) { err.textContent = U.friendlyError(ex); dots.classList.add('shake'); setTimeout(() => dots.classList.remove('shake'), 400); code = ''; paint(); }
-      }
-    };
-    root.querySelectorAll('[data-key]').forEach(b => b.addEventListener('click', () => press(b.dataset.key)));
-    const onKey = e => {
-      if (!document.body.contains(dots)) { document.removeEventListener('keydown', onKey); return; }
-      if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('⌫');
-    };
-    document.addEventListener('keydown', onKey);
-  }
 
   function missionCard({ m, done }) {
     return `
@@ -179,7 +142,6 @@
   App.views.opslag = {
     title: () => 'Opslag loods',
     render(ctx) {
-      if (!App.opslag.unlocked()) return lockView();
       const { state } = ctx;
       const today = App.missionsToday(state);
       const n = today.filter(x => x.done).length;
@@ -191,7 +153,6 @@
             <h2>Missies van <span class="warn">vandaag</span></h2>
             <p class="muted">${(d => d.charAt(0).toUpperCase() + d.slice(1))(new Date().toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${n}/${M.length} gedaan. Elke missie kan maar één keer per dag afgevinkt worden — daarna staat ze vast.</p>
           </div>
-          <button class="btn ghost" data-op-lock>${I('lock', 14)} Vergrendelen</button>
         </section>
         <div class="mis-grid">${today.map(missionCard).join('')}</div>
         <div class="grid-2">${weekGrid(state)}${baseCard(state)}</div>
@@ -204,8 +165,6 @@
         </div>`;
     },
     mount(ctx, root) {
-      if (!App.opslag.unlocked()) { bindLock(root); return; }
-      root.querySelector('[data-op-lock]').addEventListener('click', () => App.opslag.lock());
       root.querySelectorAll('[data-done]').forEach(b => b.addEventListener('click', () => confirmDone(M.find(m => m.id === b.dataset.done), ctx)));
       root.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => baseModal(Number(b.dataset.base), ctx)));
     }

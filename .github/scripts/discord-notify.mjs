@@ -19,7 +19,8 @@
 // ============================================================
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+// sinds het inloggen met Discord kan de publieke sleutel niets meer lezen → de service-sleutel (zoals de agenda-bot)
+const SUPABASE_ANON_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const STATE_PATH = new URL('../state/discord-notified.json', import.meta.url);
 

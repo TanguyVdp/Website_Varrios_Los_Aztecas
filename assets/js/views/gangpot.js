@@ -1,23 +1,11 @@
-/* Gangpot: wat er in de kas van de familia zit. Bekijken mag iedereen; aanpassen kan enkel met de gangpot-code
- * (of via het Boss menu). De zakjes van het gangpot-profiel in de Wiet loods komen er automatisch bij. */
+/* Gangpot: wat er in de kas van de familia zit. Bekijken mag iedereen; aanpassen kan wie de Boss aanvinkte
+ * ("Gangpot aanpassen" in de Ledenlijst) en wie het Boss menu heeft. De zakjes van het gangpot-profiel in de Wiet loods
+ * komen er automatisch bij. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, L = App.L;
 
-  // net als de opslag loods onthoudt de sessie de ingegeven code: wijzigt de Boss ze, dan is het meteen weer dicht
-  const KEY = 'varrios-v2-gangpot';
   App.gangpot = {
-    unlocked: () => { try { return sessionStorage.getItem(KEY) === App.store.state.settings.gangpot_code; } catch (e) { return false; } },
-    canEdit: () => App.gangpot.unlocked() || App.boss.unlocked(),
-    lock: silent => { try { sessionStorage.removeItem(KEY); } catch (e) { /* */ } if (!silent) C.toast('Gangpot vergrendeld'); App.rerender(); },
-    open() {
-      if (App.gangpot.canEdit()) return;
-      C.codeModal({
-        title: 'Gangpot aanpassen', icon: 'vault', tone: 'gold',
-        sub: `Bekijken mag iedereen — aanpassen vraagt de gangpot-code.${App.store.mode === 'demo' ? ` <span class="dim">(demo: ${U.esc(App.store.state.settings.gangpot_code)})</span>` : ''}`,
-        verify: code => App.store.verifyGangpot(code),
-        onOk: () => { try { sessionStorage.setItem(KEY, App.store.state.settings.gangpot_code); } catch (e) { /* */ } C.toast('Gangpot ontgrendeld — je kan nu aanpassen'); App.rerender(); }
-      });
-    }
+    canEdit: () => App.can('gangpot')
   };
 
   // ---------- wekelijkse bijdrage ----------
@@ -74,14 +62,12 @@
           <div class="abs-hero-text">
             <span class="lh-eyebrow">${I('crown', 13)} Gangpot</span>
             <h2>De kas van de <span class="gold-text">familia</span></h2>
-            <p class="muted">Wat er in de gangpot zit. Iedereen kan meekijken — aanpassen kan enkel met de gangpot-code.</p>
+            <p class="muted">Wat er in de gangpot zit. Iedereen kan meekijken — aanpassen kan wie de Boss daarvoor aanvinkte.</p>
           </div>
           <div class="gp-total">
             <span>Cash totaal</span>
             <b class="mono gold-text">€ ${U.num(App.gangpotCash(state))}</b>
-            ${edit
-              ? `<div class="gp-edit-on"><span class="rpill" style="--accent:var(--lime)">${I('pencil', 11)}Bewerken aan</span>${App.gangpot.unlocked() ? `<button class="btn ghost sm" data-gp-lock>${I('lock', 13)} Vergrendelen</button>` : ''}</div>`
-              : `<button class="btn ghost" data-aanpassen>${I('lock', 14)} Aanpassen (code)</button>`}
+            ${edit ? `<div class="gp-edit-on"><span class="rpill" style="--accent:var(--lime)">${I('pencil', 11)}Jij mag aanpassen</span></div>` : ''}
           </div>
         </section>
         <section class="card">
@@ -99,8 +85,6 @@
         </section>`;
     },
     mount(ctx, root) {
-      root.querySelector('[data-aanpassen]')?.addEventListener('click', () => App.gangpot.open());
-      root.querySelector('[data-gp-lock]')?.addEventListener('click', () => App.gangpot.lock());
       if (App.gangpot.canEdit()) App.bindGangpotEdit(root, ctx);
     }
   };

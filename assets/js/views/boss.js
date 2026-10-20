@@ -1,44 +1,17 @@
-/* Boss menu: vergrendeld met bosscode (los van het profiel). Keuzemenu: Wiet loods-instellingen, mededelingen,
- * agenda, afwezigheden beoordelen, gangpot bijhouden. */
+/* Boss menu: enkel voor leden met het vinkje "Boss menu" (Ledenlijst) en de eigenaar. Keuzemenu: Wiet loods-instellingen,
+ * mededelingen, agenda, afwezigheden beoordelen, gangpot bijhouden, … */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, R = App.RULES, L = App.L;
-  const KEY = 'varrios-v2-boss';
   const ui = { tab: 'overzicht', person: 'all', limit: 30 };
-  const unlocked = () => { try { return sessionStorage.getItem(KEY) === '1'; } catch (e) { return false; } };
-  const setUnlocked = v => { try { v ? sessionStorage.setItem(KEY, '1') : sessionStorage.removeItem(KEY); } catch (e) { /* */ } };
+  const unlocked = () => App.can('boss');
 
-  function lockInner() {
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
-    return `
-        <span class="lock-ic">${I('shield', 26)}</span>
-        <h2>Boss menu</h2>
-        <p class="muted">Voer de bosscode in.${App.store.mode === 'demo' ? ` <span class="dim">(demo: ${App.CONFIG.demoBossCode})</span>` : ''}</p>
-        <div class="pin-dots" id="pin-dots">${'<i></i>'.repeat(4)}</div>
-        <div class="err center" id="boss-err"></div>
-        <div class="keypad">${keys.map(k => k === '' ? '<span></span>' : `<button type="button" class="key" data-key="${k}">${k}</button>`).join('')}</div>`;
-  }
-
-  function bindKeypad(root, onOk) {
-    let code = '';
-    const dots = root.querySelector('#pin-dots');
-    const err = root.querySelector('#boss-err');
-    const paint = () => dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < code.length));
-    const press = async k => {
-      if (k === '⌫') code = code.slice(0, -1);
-      else if (code.length < 4) code += k;
-      err.textContent = ''; paint();
-      if (code.length === 4) {
-        try { await App.store.verifyBoss(code); setUnlocked(true); C.toast('Boss menu ontgrendeld'); onOk(); }
-        catch (ex) { err.textContent = U.friendlyError(ex); dots.classList.add('shake'); setTimeout(() => dots.classList.remove('shake'), 400); code = ''; paint(); }
-      }
-    };
-    root.querySelectorAll('[data-key]').forEach(b => b.addEventListener('click', () => press(b.dataset.key)));
-    const onKey = e => {
-      if (!document.body.contains(dots)) { document.removeEventListener('keydown', onKey); return; }
-      if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('⌫');
-    };
-    document.addEventListener('keydown', onKey);
-  }
+  const noBoss = () => `
+    <section class="card boss-lock noaccess" style="--accent:var(--violet)">
+      <span class="lock-ic tone">${I('shield', 26)}</span>
+      <h2>Geen toegang tot het Boss menu</h2>
+      <p class="muted">Enkel wie de Boss aanvinkte in <b>Boss menu → Ledenlijst</b> kan hier binnen.</p>
+      <a class="btn ghost" href="#/lobby">${I('back', 14)} Terug naar de lobby</a>
+    </section>`;
   // overzicht per persoon = beheertabel (zoals de oude app): slepen voor de volgorde, Discord, Bewerken
   function overzicht({ state, snap }) {
     const geleverd = new Map();
@@ -46,7 +19,7 @@
     const rows = [...state.users].sort((a, b) => a.sort_order - b.sort_order).map(u => {
       const p = snap.perUser.get(u.id);
       return `<tr data-row="${u.id}">
-        <td><div class="who-cell">${C.avatar(u, 26)}<div class="who-name"><b>${U.esc(u.name)}</b><span>${C.rank(u, true)}${u.pin ? '' : C.pill('vrij', 'muted')}</span></div></div></td>
+        <td><div class="who-cell">${C.avatar(u, 26)}<div class="who-name"><b>${U.esc(u.name)}</b><span>${C.rank(u, true)}${u.pin || L.isGangpot(u) ? '' : C.pill('geen Discord', 'muted')}</span></div></div></td>
         <td class="num">${U.num(u.total_ingelegd)}</td>
         <td class="num ${p.level}">${U.num(p.momInleg)}</td>
         <td class="num">${U.num(p.zakjes)}</td>
@@ -71,7 +44,7 @@
           <thead><tr><th>Naam</th><th class="num">Ingelegd</th><th class="num">Onverwerkt</th><th class="num">Zakjes</th><th class="num">Opgehaald</th><th class="num">Klaar</th><th class="num">Tegoed</th><th class="num">Aan klanten</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
-        <p class="muted small card-pad order-hint">Profielen, codes, foto's, rangen, volgorde en toegang beheer je in <a href="#/boss/leden" class="violet">Boss menu → Ledenlijst</a>. Hier: Wiet loods-cijfers corrigeren en registreren namens iemand.</p>
+        <p class="muted small card-pad order-hint">Profielen, Discord, foto's, rangen, volgorde en toegang beheer je in <a href="#/boss/leden" class="violet">Boss menu → Ledenlijst</a>. Hier: Wiet loods-cijfers corrigeren en registreren namens iemand.</p>
       </section>`;
   }
 
@@ -113,7 +86,7 @@
   function discordModal(u) {
     C.modal.open(`
       <h3>Discord koppelen — ${U.esc(u.name)}</h3>
-      <p class="muted small">Vul het Discord user-ID in (Discord → Instellingen → Geavanceerd → Ontwikkelaarsmodus aan, dan rechtsklik op iemand → "Gebruikers-ID kopiëren"). Leeg = koppeling verwijderen.</p>
+      <p class="muted small">Vul het Discord user-ID in (Discord → Instellingen → Geavanceerd → Ontwikkelaarsmodus aan, dan rechtsklik op iemand → "Gebruikers-ID kopiëren"). Met dit ID logt het lid in. Leeg = koppeling verwijderen (kan dan niet meer inloggen).</p>
       <form class="stack" id="dc-form" autocomplete="off">
         <input class="input mono" id="dc-id" inputmode="numeric" placeholder="bv. 123456789012345678" value="${U.esc(u.discord_id || '')}">
         <div class="err" id="dc-err"></div>
@@ -272,18 +245,22 @@
   // ---------- ledenlijst: profielen, toegang, volgorde ----------
   function sLeden({ state }) {
     const users = [...state.users].sort((a, b) => a.sort_order - b.sort_order);
-    const vrij = users.filter(u => !u.pin).length;
+    const vrij = users.filter(u => !u.pin && !L.isGangpot(u)).length;
     return `
       <section class="card flush">
         ${C.cardHead('Ledenlijst', 'users', `<button class="btn violet sm" data-new-profile ${users.length >= R.MAX_USERS ? 'disabled' : ''}>${I('plus', 13)} Profiel aanmaken</button>`)}
-        <p class="muted small card-pad">${users.length}/${R.MAX_USERS} profielen${vrij ? ` · ${vrij} nog niet geclaimd` : ''} · ${I('grip', 12)} sleep om de volgorde bij <b>"Wie ben jij?"</b> te bepalen · vink aan wie toegang heeft.</p>
+        <p class="muted small card-pad">${users.length}/${R.MAX_USERS} profielen${vrij ? ` · ${vrij} zonder Discord (kunnen niet inloggen)` : ''} · ${I('grip', 12)} sleep om de volgorde te bepalen · vink aan wie toegang heeft. <b>Boss menu</b> geeft ook gangpot en opslag.</p>
         <div class="table-wrap"><table class="table boss-table leden-table">
           <thead><tr><th></th><th>Lid</th><th>Status</th>${App.ACCESS.map(a => `<th class="center">${a.label}${a.hint ? `<small>${a.hint}</small>` : ''}</th>`).join('')}<th>Discord</th><th></th></tr></thead>
           <tbody id="order-body">${users.map(u => { const gp = L.isGangpot(u); return `<tr data-row="${u.id}">
             <td class="drag-cell"><span class="drag-handle" data-drag title="Slepen om de volgorde aan te passen">${I('grip', 16)}</span></td>
             <td><div class="who-cell">${C.avatar(u, 32)}<div class="who-name"><b>${U.esc(u.name)}</b><span>${C.rank(u, true)}</span></div></div></td>
-            <td>${u.pin ? `<span class="rpill" style="--accent:var(--lime)">${I('check', 11)}actief</span>` : `<span class="rpill" style="--accent:var(--warn)">${I('clock', 11)}nog vrij</span>`}</td>
-            ${App.ACCESS.map(a => { const on = App.hasAccess(u, a.key); return `<td class="center">${gp ? '<span class="dim small">altijd</span>'
+            <td>${u.owner ? `<span class="rpill" style="--accent:var(--gold)">${I('crown', 11)}eigenaar</span>` : gp ? '<span class="dim small">gangpot</span>'
+              : u.pin ? `<span class="rpill" style="--accent:var(--lime)">${I('check', 11)}kan inloggen</span>` : `<span class="rpill" style="--accent:var(--warn)">${I('clock', 11)}geen Discord</span>`}</td>
+            ${App.ACCESS.map(a => { const on = App.hasAccess(u, a.key); const via = on && !u.owner && !(u.access || {})[a.key] && (a.key === 'gangpot' || a.key === 'opslag');
+              return `<td class="center">${gp ? (a.key === 'boss' || a.key === 'gangpot' ? '<span class="dim small">—</span>' : '<span class="dim small">altijd</span>')
+              : u.owner ? `<span class="chk on locked" style="--accent:var(--${a.tone})" title="Eigenaar: altijd">${I('check', 13)}</span>`
+              : via ? `<span class="chk on locked" style="--accent:var(--${a.tone})" title="Via Boss menu">${I('check', 13)}</span>`
               : `<button class="chk ${on ? 'on' : ''}" style="--accent:var(--${a.tone})" data-access="${a.key}" data-uid="${u.id}" title="${a.label}${a.hint ? ' (' + a.hint + ')' : ''}" aria-pressed="${on}">${on ? I('check', 13) : ''}</button>`}</td>`; }).join('')}
             <td><button class="discord-btn ${u.discord_id ? 'set' : ''}" data-discord="${u.id}" title="${u.discord_id ? 'Discord-ID wijzigen' : 'Discord koppelen'}">${u.discord_id ? `<span class="mono">${U.esc(u.discord_id.slice(0, 6))}…${U.esc(u.discord_id.slice(-4))}</span>${I('pencil', 12)}` : `${I('plus', 12)} Koppelen`}</button></td>
             <td class="num"><button class="btn ghost sm" data-profile-edit="${u.id}" title="Beheren">${I('gear', 13)}<span class="btn-label">Beheren</span></button></td>
@@ -300,9 +277,11 @@
   function newProfileModal() {
     const f = { rank: null, access: { ...App.ACCESS_DEFAULT }, staff: false };
     C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--violet)">${I('user', 18)}</span><div><h3>Profiel aanmaken</h3><p class="muted small">Zonder code — het lid kiest zelf een code bij de eerste keer inloggen.</p></div></div>
+      <div class="af-head"><span class="af-ic" style="--accent:var(--violet)">${I('user', 18)}</span><div><h3>Profiel aanmaken</h3><p class="muted small">Het lid logt in met Discord: vul het Discord-ID in, dan kan het meteen binnen.</p></div></div>
       <form class="stack" id="np-form" autocomplete="off">
         <label class="field"><span>Naam</span><input class="input" id="np-name" maxlength="24" placeholder="bv. Carlos"></label>
+        <label class="field"><span>Discord-ID</span><input class="input mono" id="np-discord" inputmode="numeric" maxlength="22" placeholder="bv. 123456789012345678">
+          <small class="dim">In Discord: rechtsklik op het lid → <b>Gebruikers-ID kopiëren</b> (ontwikkelaarsmodus aan). Kan ook later.</small></label>
         <div class="field"><span>Rang</span>${rankPicker(null)}</div>
         <div class="field"><span>Toegang</span>
           <div class="acc-opts">${App.ACCESS.map(a => { const on = a.key === 'amfi_staff' ? f.staff : !!f.access[a.key]; return `<button type="button" class="acc ${on ? 'on' : ''}" data-acc="${a.key}" style="--accent:var(--${a.tone})"><span class="chk ${on ? 'on' : ''}">${on ? I('check', 13) : ''}</span>${I(a.icon, 15)}<span>${a.label}${a.hint ? ` <em>${a.hint}</em>` : ''}</span></button>`; }).join('')}</div>
@@ -324,8 +303,15 @@
       $('#np-form').addEventListener('submit', e => {
         e.preventDefault();
         C.busy($('#np-form button[type=submit]'), async () => {
-          try { const u = await App.store.bossCreateProfile({ name: $('#np-name').value, rank: f.rank, access: f.access, amfi_staff: f.staff }); C.modal.close(); C.toast(`Profiel ${U.esc(u.name)} aangemaakt — kiest zelf een code bij het inloggen`); }
-          catch (ex) { $('#np-err').textContent = U.friendlyError(ex); }
+          try {
+            const discord = $('#np-discord').value.trim();
+            if (discord && !/^\d{15,22}$/.test(discord)) throw new Error('ONGELDIG_DISCORD_ID');
+            const u = await App.store.bossCreateProfile({ name: $('#np-name').value, rank: f.rank, access: f.access, amfi_staff: f.staff });
+            for (const k of ['gangpot', 'boss']) if (f.access[k]) await App.store.bossSetAccess(u.id, k, true);
+            if (discord) await App.store.bossSetDiscord(u.id, discord);
+            C.modal.close();
+            C.toast(discord ? `Profiel ${U.esc(u.name)} aangemaakt — kan inloggen met Discord` : `Profiel ${U.esc(u.name)} aangemaakt — vul nog het Discord-ID in`);
+          } catch (ex) { $('#np-err').textContent = U.friendlyError(ex); }
         });
       });
     }, { wide: true });
@@ -336,7 +322,7 @@
     C.modal.open(`
       <div class="profile-head">
         <button class="avatar-edit" id="pa-photo" title="Foto kiezen">${C.avatar(u, 56)}<span>${I('pencil', 12)}</span></button>
-        <div><h3>${U.esc(u.name)} ${C.rank(u)}</h3><p class="muted small">${u.pin ? 'actief profiel' : 'nog niet geclaimd — kiest zelf een code bij de eerste login'}</p></div>
+        <div><h3>${U.esc(u.name)} ${C.rank(u)}</h3><p class="muted small">${u.owner ? 'eigenaar — altijd alle rechten' : gp ? 'gangpot-profiel (kan niet inloggen)' : u.pin ? 'kan inloggen met Discord' : 'nog geen Discord-ID — kan niet inloggen'}</p></div>
       </div>
       <div class="mng-block">
         <span class="eyebrow">Profielfoto</span>
@@ -346,13 +332,8 @@
         </div>
       </div>
       ${gp ? '' : `<div class="mng-block"><span class="eyebrow">Rang</span>${rankPicker(u.rank)}</div>`}
-      <div class="mng-block">
-        <span class="eyebrow">Code</span>
-        <p class="muted small">${u.pin ? 'Reset de code als het lid ze vergeten is: het profiel (met alle geschiedenis) blijft, het lid kiest bij de volgende login een nieuwe code.' : 'Dit profiel heeft nog geen code.'}</p>
-        <button class="btn ghost" id="pa-reset" ${u.pin ? '' : 'disabled'}>${I('lock', 14)} Code resetten</button>
-      </div>
       <div class="err" id="pa-err"></div>
-      ${gp ? '' : `<button class="btn ghost block danger-text" id="pa-del">${I('trash', 14)} Profiel verwijderen</button>`}`, modal => {
+      ${gp || u.owner ? '' : `<button class="btn ghost block danger-text" id="pa-del">${I('trash', 14)} Profiel verwijderen</button>`}`, modal => {
       const $ = q => modal.querySelector(q);
       const pick = () => { C.modal.close(); C.pickAvatar(u.id); };
       $('#pa-photo').addEventListener('click', pick);
@@ -366,8 +347,6 @@
           C.toast(r ? `${U.esc(u.name)} is nu ${r.label}` : `Rang van ${U.esc(u.name)} verwijderd`);
         } catch (ex) { $('#pa-err').textContent = U.friendlyError(ex); }
       })));
-      $('#pa-reset').addEventListener('click', () => confirmModal(`Code van ${U.esc(u.name)} resetten?`, `Het profiel en alle geschiedenis blijven bestaan, maar ${U.esc(u.name)} moet bij de volgende login een nieuwe code kiezen.`, 'Code resetten',
-        async () => { await App.store.bossResetPin(u.id); C.toast('Code gereset — kiest een nieuwe bij het inloggen'); }));
       $('#pa-del')?.addEventListener('click', () => confirmModal(`Profiel van ${U.esc(u.name)} verwijderen?`, 'Het logboek blijft bewaard (met naam), enkel het profiel verdwijnt. Dit kan niet ongedaan gemaakt worden.', 'Verwijderen',
         async () => { await App.store.bossDeleteProfile(u.id); C.toast('Profiel verwijderd'); }));
     }, { wide: true });
@@ -425,7 +404,18 @@
       </div>`;
   }
 
-  // ---------- opslag loods: code + overzicht ----------
+  // wie heeft een recht (vinkje of via Boss menu / eigenaar) — voor de kaarten bij Opslag en Gangpot
+  function whoHasCard(state, key, title, tone, icon) {
+    const leden = state.users.filter(u => !L.isGangpot(u) && App.hasAccess(u, key)).sort((a, b) => a.sort_order - b.sort_order);
+    return `
+        <section class="card">
+          ${C.cardHead(title, icon, `<a class="link-more" style="color:var(--violet)" href="#/boss/leden">Ledenlijst ${I('arrowRight', 13)}</a>`)}
+          <p class="muted small">Geen code meer nodig: wie aangevinkt is in <b>Boss menu → Ledenlijst</b> (of het Boss menu heeft) kan hier meteen in.</p>
+          <div class="staff-chips">${leden.map(u => `<span class="staff-chip">${C.avatar(u, 22)}<b class="tcap">${U.esc(u.name)}</b></span>`).join('') || '<span class="dim small">Nog niemand.</span>'}</div>
+        </section>`;
+  }
+
+  // ---------- opslag loods: wie heeft toegang + overzicht ----------
   function sOpslag({ state }) {
     const M = App.MISSIONS, today = U.dkey(new Date());
     const from = U.dkey(U.addDays(new Date(), -29));
@@ -435,16 +425,7 @@
     const rows = [...per.entries()].sort((a, b) => b[1].total - a[1].total);
     return `
       <div class="grid-2">
-        <section class="card">
-          ${C.cardHead('Toegangscode', 'lock')}
-          <p class="muted small">Enkel wie deze code kent, komt in de Opslag loods. Wijzig ze als ze uitgelekt is — iedereen moet dan de nieuwe code ingeven.</p>
-          <form class="stack" id="oc-form" autocomplete="off">
-            <label class="field"><span>Nieuwe code (4 cijfers)</span><input class="input lg mono" id="oc-code" inputmode="numeric" maxlength="4" placeholder="••••"></label>
-            <div class="err" id="oc-err"></div>
-            <button class="btn warn block" type="submit">${I('lock', 14)} Code wijzigen</button>
-          </form>
-          ${App.store.mode === 'demo' ? `<p class="dim small" style="margin-top:10px">Demo — huidige code: <b class="mono">${U.esc(state.settings.opslag_code)}</b></p>` : ''}
-        </section>
+        ${whoHasCard(state, 'opslag', 'Wie heeft toegang', 'warn', 'users')}
         <section class="card">
           ${C.cardHead('Missies — laatste 30 dagen', 'list', `<a class="link-more" href="#/opslag" style="color:var(--warn)">Opslag loods ${I('arrowRight', 13)}</a>`)}
           <div class="table-wrap"><table class="table">
@@ -456,17 +437,12 @@
       </div>`;
   }
 
-  // ---------- boss-sessie: los van het profiel, de bosscode alleen volstaat ----------
+  // ---------- boss-rechten: vinkje "Boss menu" of eigenaar ----------
   App.boss = {
     unlocked,
     who: ctx => (ctx && ctx.me ? `Boss (${ctx.me.name})` : 'Boss'),
-    lock() { setUnlocked(false); C.toast('Boss menu vergrendeld'); App.go('lobby'); App.rerender(); },
-    // knop rechtsboven: meteen naar het menu, of eerst de code vragen
     open(target = 'boss') {
-      if (unlocked()) { App.go(target); return; }
-      C.modal.open(`<div class="boss-lock in-modal">${lockInner()}</div>`, modal => {
-        bindKeypad(modal, () => { C.modal.close(); App.go(target); App.rerender(); });
-      });
+      if (unlocked()) App.go(target); else C.toast(App.ERR.GEEN_BOSS);
     }
   };
 
@@ -474,8 +450,8 @@
   const ST = App.ABSENCE.STATUS;
   const SECTIONS = [
     { id: 'leden', label: 'Ledenlijst', icon: 'users', tone: 'violet',
-      desc: 'Profielen aanmaken of verwijderen, codes resetten, foto, rang, volgorde en wie toegang heeft tot welke loods.',
-      badge: ({ state }) => { const v = state.users.filter(u => !u.pin).length; return { t: `${state.users.length} profielen${v ? ` · ${v} vrij` : ''}`, tone: 'violet' }; } },
+      desc: 'Profielen aanmaken of verwijderen, Discord koppelen, foto, rang, volgorde en wie waar toegang heeft (ook Boss menu).',
+      badge: ({ state }) => { const v = state.users.filter(u => !u.pin && !L.isGangpot(u)).length; return { t: `${state.users.length} profielen${v ? ` · ${v} zonder Discord` : ''}`, tone: 'violet' }; } },
     { id: 'loods', label: 'Wiet loods-instellingen', icon: 'leaf', tone: 'lime',
       desc: 'Overzicht per persoon, cijfers corrigeren, registreren namens iemand, klanten, wachtrij en logboek.',
       badge: ({ snap }) => snap.baseline.paused ? { t: 'gepauzeerd', tone: 'warn' } : { t: 'actief', tone: 'lime' } },
@@ -495,10 +471,10 @@
       desc: 'Recept per winkel en de prijs per poeder.',
       badge: ({ state }) => { const n = state.tickets.filter(t => t.status === 'wachtrij').length; return { t: `${n} in wachtrij`, tone: n ? 'sky' : 'lime' }; } },
     { id: 'opslag', label: 'Opslag loods', icon: 'box', tone: 'warn',
-      desc: 'Toegangscode wijzigen en zien wie de dagelijkse missies doet.',
+      desc: 'Zien wie toegang heeft en wie de dagelijkse missies doet.',
       badge: ({ state }) => { const t = U.dkey(new Date()); const n = App.MISSIONS.filter(m => state.missions.some(x => x.datum === t && x.type === m.id)).length; return { t: `vandaag ${n}/${App.MISSIONS.length}`, tone: n === App.MISSIONS.length ? 'lime' : 'warn' }; } },
     { id: 'website', label: 'Website', icon: 'alert', tone: 'cyan',
-      desc: 'Onderhoudsscherm aan of uit: tijdens onderhoud kom je enkel met de bosscode op de site.',
+      desc: 'Onderhoudsscherm aan of uit: tijdens onderhoud kan enkel wie het Boss menu heeft op de site.',
       badge: ({ state }) => state.settings.site_onderhoud ? { t: 'in onderhoud', tone: 'warn', hot: true } : { t: 'open voor iedereen', tone: 'lime' } }
   ];
 
@@ -509,8 +485,8 @@
       <section class="card">
         ${C.cardHead('Onderhoudsscherm', 'alert', on ? C.pill('in onderhoud', 'warn') : C.pill('open', 'lime'))}
         <p class="muted">${on
-          ? 'De website staat <b>in onderhoud</b>. Iedereen ziet het onderhoudsscherm; enkel wie de bosscode ingeeft, kan verder naar het inloggen.'
-          : 'De website is <b>open</b>: iedereen kan inloggen met zijn eigen profiel.'}</p>
+          ? 'De website staat <b>in onderhoud</b>. Iedereen ziet het onderhoudsscherm; enkel wie het Boss menu heeft, kan na het inloggen verder.'
+          : 'De website is <b>open</b>: iedereen met een gekoppeld Discord-account kan inloggen.'}</p>
         <button class="btn ${on ? 'primary' : 'warn'}" id="ws-toggle" style="margin-top:12px">${on ? `${I('play', 14)} Website openzetten voor iedereen` : `${I('pause', 14)} In onderhoud zetten`}</button>
       </section>`;
   }
@@ -527,7 +503,6 @@
           <h2>Wat wil je doen?</h2>
           <p class="muted">Kies een onderdeel. Alles wat je hier aanpast, ziet de familia meteen.</p>
         </div>
-        <button class="btn ghost" data-boss-lock>${I('lock', 14)} Vergrendelen</button>
       </section>
       <div class="boss-grid">
         ${SECTIONS.map(s => { const b = s.badge(ctx); return `
@@ -544,7 +519,7 @@
       <div class="boss-sec-head" style="--accent:var(--${s.tone});--accent-soft:var(--${s.tone}-soft)">
         <a class="auth-back" href="#/boss">${I('back', 14)} Boss menu</a>
         <div class="bsh-title"><span class="btile-ic sm">${I(s.icon, 18)}</span><h2>${s.label}</h2></div>
-        <div class="bsh-right">${right}<button class="btn ghost" data-boss-lock>${I('lock', 14)} Vergrendelen</button></div>
+        <div class="bsh-right">${right}</div>
       </div>`;
   }
 
@@ -660,7 +635,7 @@
             </div>
           </div>`).join('') || C.empty('Nog niets in de gangpot.', 'vault')}</div>`;
 
-  // wie de wijziging deed: de Boss, of het ingelogde lid dat de gangpot-code kent
+  // wie de wijziging deed: de Boss, of het ingelogde lid met het vinkje "Gangpot aanpassen"
   const gpWho = ctx => unlocked() ? App.boss.who(ctx) : (ctx.me ? ctx.me.name : 'Gangpot');
 
   App.bindGangpotEdit = (root, ctx) => {
@@ -703,16 +678,7 @@
     const items = [...state.gangpot.items].sort((a, b) => a.sort_order - b.sort_order);
     const log = [...state.gangpot.log].sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 12);
     return `
-      <section class="card gp-code-card">
-        ${C.cardHead('Gangpot-code', 'lock')}
-        <p class="muted small">Iedereen kan de gangpot bekijken, maar enkel wie deze code kent kan hem aanpassen. Wijzig de code als ze uitgelekt is.</p>
-        <form class="mng-inline" id="gc-form" autocomplete="off">
-          <input class="input mono" id="gc-code" inputmode="numeric" maxlength="4" placeholder="nieuwe code (4 cijfers)">
-          <button class="btn gold" type="submit">${I('lock', 14)} Code wijzigen</button>
-        </form>
-        <div class="err" id="gc-err"></div>
-        ${App.store.mode === 'demo' ? `<p class="dim small">Demo — huidige code: <b class="mono">${U.esc(state.settings.gangpot_code)}</b></p>` : ''}
-      </section>
+      ${whoHasCard(state, 'gangpot', 'Wie mag de gangpot aanpassen', 'gold', 'users')}
       ${payCard(state)}
       <section class="card">
         ${C.cardHead('Wat zit er in de gangpot', 'vault', `<button class="btn gold" data-gp-new>${I('plus', 14)} Item toevoegen</button>`)}
@@ -795,7 +761,7 @@
   App.views.boss = {
     title: ctx => { const s = SECTIONS.find(x => x.id === ctx.params[0]); return s && unlocked() ? s.label : 'Boss menu'; },
     render(ctx) {
-      if (!unlocked()) return `<section class="card boss-lock">${lockInner()}</section>`;
+      if (!unlocked()) return noBoss();
       const s = SECTIONS.find(x => x.id === ctx.params[0]);
       if (!s) return hub(ctx);
       if (s.id === 'loods') {
@@ -808,8 +774,7 @@
       return secHead(s) + body(ctx);
     },
     mount(ctx, root) {
-      if (!unlocked()) { bindKeypad(root, () => App.rerender()); return; }
-      root.querySelectorAll('[data-boss-lock]').forEach(b => b.addEventListener('click', () => App.boss.lock()));
+      if (!unlocked()) return;
       const sec = ctx.params[0];
       const who = App.boss.who(ctx);
 
@@ -957,17 +922,6 @@
         }));
       }
 
-      if (sec === 'opslag') {
-        const form = root.querySelector('#oc-form');
-        form.addEventListener('submit', e => {
-          e.preventDefault();
-          C.busy(form.querySelector('button[type=submit]'), async () => {
-            try { await App.store.setOpslagCode(root.querySelector('#oc-code').value); App.opslag.lock(true); C.toast('Opslag-code gewijzigd'); }
-            catch (ex) { root.querySelector('#oc-err').textContent = U.friendlyError(ex); }
-          });
-        });
-      }
-
       if (sec === 'gangpot') {
         App.bindGangpotEdit(root, ctx);
         root.querySelectorAll('[data-payweek]').forEach(b => b.addEventListener('click', () => { payUi.offset = Math.min(1, payUi.offset + Number(b.dataset.payweek)); App.rerender(); }));
@@ -981,14 +935,6 @@
           for (const u of App.gangpotMembers(ctx.state)) if (!App.gangpotPaid(ctx.state, u.id, week)) await App.store.bossSetGangpotPaid(u.id, week, true, who);
           C.toast('Iedereen op betaald gezet');
         }));
-        const gc = root.querySelector('#gc-form');
-        gc.addEventListener('submit', e => {
-          e.preventDefault();
-          C.busy(gc.querySelector('button[type=submit]'), async () => {
-            try { await App.store.setGangpotCode(root.querySelector('#gc-code').value); App.gangpot.lock(true); C.toast('Gangpot-code gewijzigd'); }
-            catch (ex) { root.querySelector('#gc-err').textContent = U.friendlyError(ex); }
-          });
-        });
       }
 
     }

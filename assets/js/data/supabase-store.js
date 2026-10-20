@@ -8,25 +8,23 @@
 (function (App) {
   if (App.CONFIG.mode !== 'supabase') return;
   const R = App.RULES, L = App.L, AM = App.AMFI;
-  const sb = window.supabase.createClient(App.CONFIG.supabase.url, App.CONFIG.supabase.anonKey);
+  // inloggen met Discord (Supabase Auth). PKCE: Discord stuurt terug met ?code=… (de # blijft vrij voor de router)
+  const sb = window.supabase.createClient(App.CONFIG.supabase.url, App.CONFIG.supabase.anonKey, {
+    auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'varrios-v2-auth' }
+  });
   const subs = new Set();
   const E = code => new Error(code);
-
-  // geheime sleutels (24u) die de database teruggeeft na een juiste boss-/opslag-/gangpot-code (zie update-v2-beveiliging.sql)
-  const HASH = { boss: 'varrios-v2-boss-h', opslag: 'varrios-v2-opslag-h', gangpot: 'varrios-v2-gangpot-h' };
+  const AFTER_LOGIN = 'varrios-v2-after-login';   // pagina waar je was voor je naar Discord ging
   const ss = {
     get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
-    set: (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) { /* privémodus */ } }
+    set: (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) { /* privémodus */ } },
+    del: k => { try { sessionStorage.removeItem(k); } catch (e) { /* privémodus */ } }
   };
-  const bossHash = () => ss.get(HASH.boss);
-  const needBoss = () => { const h = bossHash(); if (!h) throw E('ONJUISTE_BOSSCODE'); return h; };
-  const gangpotHash = () => (App.boss.unlocked() && bossHash()) || ss.get(HASH.gangpot);
-  const opslagHash = () => (App.opslag.unlocked() && ss.get(HASH.opslag)) || (App.boss.unlocked() && bossHash()) || ss.get(HASH.opslag);
-
-  async function sha256(text) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
+  // status: 'anon' (niet ingelogd) | 'unlinked' (Discord niet gekoppeld aan een profiel) | 'member'
+  const auth = { status: 'anon', userId: null, discordId: null, discordName: null, error: null };
+  // de rechten (Boss, gangpot, opslag) controleert de database zelf aan de hand van wie ingelogd is;
+  // de oude code-parameters van de functies blijven bestaan maar zijn leeg
+  const needBoss = () => null, bossHash = () => null, gangpotHash = () => null, opslagHash = () => null;
 
   // fout van Postgres ("ONJUISTE_BOSSCODE" uit raise exception) → zelfde codes als de demo-store
   function errCode(error) {
@@ -55,12 +53,13 @@
     }
   }
 
+  // pin = "kan inloggen" = Discord gekoppeld
   const mapUser = u => ({
-    id: u.id, name: u.name, pin: u.claimed ? true : null,
+    id: u.id, name: u.name, pin: u.discord_id ? true : null,
     total_ingelegd: u.total_ingelegd || 0, opgehaald: u.opgehaald || 0, legacy_zakjes: u.legacy_zakjes || 0,
     sort_order: u.sort_order == null ? 999 : u.sort_order, avatar_url: u.avatar_url, discord_id: u.discord_id, created_at: u.created_at,
-    rank: u.rank || null, amfi_staff: !!u.amfi_staff,
-    access: { wiet: u.access_wiet !== false, opslag: !!u.access_opslag, amfi: !!u.access_amfi }
+    rank: u.rank || null, amfi_staff: !!u.amfi_staff, owner: !!u.is_owner,
+    access: { wiet: u.access_wiet !== false, opslag: !!u.access_opslag, amfi: !!u.access_amfi, gangpot: !!u.perm_gangpot, boss: !!u.perm_boss }
   });
 
   // ruwe tabellen; state wordt daaruit opgebouwd
@@ -71,7 +70,11 @@
     customers: () => all('customers', 'name'),
     customerLog: () => all('customer_log', 'ts'),
     baseline:  async () => { const { data, error } = await sb.from('loods_baseline').select('*').eq('id', true).maybeSingle(); if (error) throw E(errCode(error)); return data; },
-    settings:  async () => { const { data, error } = await sb.from('portal_settings').select('*').eq('id', true).maybeSingle(); if (error) throw E(errCode(error)); return data; },
+    // niet ingelogd: enkel "staat de site in onderhoud" (fn_public_status)
+    settings:  async () => {
+      if (auth.status !== 'member') return rpc('fn_public_status');
+      const { data, error } = await sb.from('portal_settings').select('*').eq('id', true).maybeSingle(); if (error) throw E(errCode(error)); return data;
+    },
     absences:  () => all('absences', 'created_at'),
     notices:   () => all('notices', 'created_at', false),
     events:    () => all('events', 'datum'),
@@ -164,13 +167,38 @@
     qTimer = setTimeout(() => { const ks = [...queued]; queued.clear(); refresh(ks).catch(e => console.error(e)); }, 300);
   }
 
+  // terug van Discord: ?code=… (of ?error=…) uit de adresbalk halen en terug naar de pagina van voor het inloggen
+  function cleanUrl() {
+    const q = new URLSearchParams(location.search);
+    if (!q.has('code') && !q.has('error')) return;
+    if (q.has('error')) auth.error = q.get('error_description') || q.get('error');
+    ['code', 'error', 'error_code', 'error_description', 'state'].forEach(k => q.delete(k));
+    const back = ss.get(AFTER_LOGIN) || location.hash || '#/lobby';
+    ss.del(AFTER_LOGIN);
+    history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + back);
+  }
+
   const ready = (async () => {
+    const { data: { session } } = await sb.auth.getSession();   // wacht ook tot een ?code= van Discord verwerkt is
+    cleanUrl();
+    if (session) {
+      const md = session.user.user_metadata || {};
+      auth.discordName = md.full_name || md.name || md.custom_claims?.global_name || null;
+      const who = await rpc('fn_whoami');
+      auth.discordId = who && who.discord_id;
+      auth.userId = who && who.user_id;
+      auth.status = auth.userId ? 'member' : 'unlinked';
+    }
+    // uitgelogd (ook in een ander tabblad) of een ander account → alles opnieuw opbouwen
+    sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') location.reload(); });
+    if (auth.status !== 'member') { raw.settings = await LOADERS.settings(); build(); return; }
+
     await Promise.all(Object.keys(LOADERS).map(async k => { raw[k] = await LOADERS[k](); }));
     build();
     const ch = sb.channel('varrios-v2');
     Object.entries(TABLES).forEach(([table, keys]) => ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => queue(keys)));
     ch.subscribe();
-    // de users-tabel zelf is niet leesbaar (pincodes) → geen Realtime; daarom geregeld de profielen opnieuw ophalen
+    // de users-tabel zelf is niet leesbaar → geen Realtime; daarom geregeld de profielen opnieuw ophalen
     setInterval(() => { if (!document.hidden) queue(['users']); }, 20000);
     // vangnet als Realtime even wegviel (slaapstand, wifi)
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queue(Object.keys(LOADERS)); });
@@ -178,7 +206,6 @@
 
   const userById = id => { const u = state.users.find(x => x.id === id); if (!u) throw E('GEBRUIKER_NIET_GEVONDEN'); return u; };
   const posInt = n => { n = Number(n); if (!Number.isInteger(n) || n <= 0) throw E('ONGELDIG_AANTAL'); return n; };
-  const pin4 = pin => { if (!pin || String(pin).length < 4) throw E('ONGELDIGE_CODE'); return String(pin); };
   const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
   App.store = {
@@ -187,28 +214,20 @@
     get state() { return state; },
     subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
 
+    // ---- inloggen (Discord) ----
+    get auth() { return auth; },
+    async signIn() {
+      ss.set(AFTER_LOGIN, location.hash || '#/lobby');
+      const { error } = await sb.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.origin + location.pathname + location.search } });
+      if (error) throw E(errCode(error));
+    },
+    // daarna herlaadt de pagina vanzelf (onAuthStateChange → SIGNED_OUT)
+    async signOut() {
+      const { error } = await sb.auth.signOut();
+      if (error) { console.error(error); location.reload(); }
+    },
+
     // ---- profielen ----
-    async login(userId, pin) {
-      const u = userById(userId);
-      if (!u.pin) throw E('GEBRUIKER_NIET_GEVONDEN');
-      const ok = await rpc('fn_verify_login', { p_user_id: userId, p_pin_hash: await sha256(pin) });
-      if (!ok) throw E('ONJUISTE_CODE');
-      return u;
-    },
-    async claimProfile(userId, pin) {
-      await rpc('fn_claim_profile', { p_user_id: userId, p_pin_hash: await sha256(pin4(pin)) });
-      await after(['users']);
-      return userById(userId);
-    },
-    async createProfile(name, pin) {
-      const u = await rpc('fn_create_profile', { p_name: String(name || '').trim(), p_pin_hash: await sha256(pin4(pin)) });
-      await after(['users']);
-      return userById(u.id);
-    },
-    async changePin(userId, oldPin, newPin) {
-      const ok = await rpc('fn_change_pin', { p_user_id: userId, p_old_pin_hash: await sha256(oldPin), p_new_pin_hash: await sha256(pin4(newPin)) });
-      if (!ok) throw E('ONJUISTE_HUIDIGE_CODE');
-    },
     // profielfoto: upload naar Storage-bucket 'avatars' (zoals de oude app), daarna de publieke URL opslaan
     async setAvatar(userId, dataUrl) {
       let url = null;
@@ -262,13 +281,6 @@
     },
 
     // ---- boss ----
-    // de code wordt één keer gecontroleerd (met limiet op foute pogingen); daarna werken we met een sleutel van 24u
-    async verifyBoss(code) {
-      const token = await rpc('fn_boss_login', { p_pin_hash: await sha256(String(code || '')) });
-      if (!token) throw E('ONJUISTE_BOSSCODE');
-      ss.set(HASH.boss, token);
-      return true;
-    },
     async setBaseline(patch, byName) {
       const b = state.baseline;
       if (patch.paused !== undefined) await rpc('fn_set_maintenance', { p_paused: !!patch.paused, p_boss_pin_hash: needBoss() });
@@ -343,39 +355,13 @@
       await rpc('fn_gangpot_delete_item', { p_item_id: itemId, p_code_hash: gangpotHash() });
       await after(['gpItems']);
     },
-    async verifyGangpot(code) {
-      const r = await rpc('fn_gangpot_login', { p_pin_hash: await sha256(String(code || '')) });
-      if (!r) throw E('ONJUISTE_GANGPOTCODE');
-      ss.set(HASH.gangpot, r.token);
-      if (state.settings.gangpot_code !== 'v' + r.v) await after(['settings']);
-      return true;
-    },
-    async setGangpotCode(code) {
-      code = String(code || '').trim();
-      if (!/^\d{4}$/.test(code)) throw E('ONGELDIGE_CODE');
-      await rpc('fn_set_gangpot_code', { p_new_pin_hash: await sha256(code), p_boss_pin_hash: needBoss() });
-      await after(['settings']);
-    },
     async bossSetGangpotPaid(userId, week, paid, door) {
       if (!DAY.test(week || '')) throw E('ONGELDIGE_DATUM');
       await rpc('fn_boss_set_gangpot_paid', { p_user_id: userId, p_week: week, p_paid: !!paid, p_door: door, p_boss_pin_hash: needBoss() });
       await after(['payments']);
     },
 
-    // ---- opslag loods (opslag-code of bosscode) ----
-    async verifyOpslag(code) {
-      const r = await rpc('fn_opslag_login', { p_pin_hash: await sha256(String(code || '')) });
-      if (!r) throw E('ONJUISTE_OPSLAGCODE');
-      ss.set(HASH.opslag, r.token);
-      if (state.settings.opslag_code !== 'v' + r.v) await after(['settings']);
-      return true;
-    },
-    async setOpslagCode(code) {
-      code = String(code || '').trim();
-      if (!/^\d{4}$/.test(code)) throw E('ONGELDIGE_CODE');
-      await rpc('fn_set_opslag_code', { p_new_pin_hash: await sha256(code), p_boss_pin_hash: needBoss() });
-      await after(['settings']);
-    },
+    // ---- opslag loods (vinkje opslag of Boss) ----
     async completeMission(type, userId) {
       await rpc('fn_complete_mission', { p_type: type, p_user_id: userId, p_code_hash: opslagHash() });
       await after(['missions', 'gpItems', 'gpLog']);
@@ -452,10 +438,6 @@
       if (vals.some(v => !Number.isInteger(v) || v < 0)) throw E('ONGELDIGE_WAARDE');
       await rpc('fn_boss_set_user_data', { p_user_id: userId, p_total_ingelegd: vals[0], p_opgehaald: vals[1], p_legacy_zakjes: vals[2], p_boss_pin_hash: needBoss(), p_set_by: door });
       await after(['users', 'log']);
-    },
-    async bossResetPin(userId) {
-      await rpc('fn_boss_reset_pin', { p_user_id: userId, p_boss_pin_hash: needBoss() });
-      await after(['users']);
     },
     async bossDeleteProfile(userId) {
       if (L.isGangpot(userById(userId))) throw E('GANGPOT_PROFIEL');

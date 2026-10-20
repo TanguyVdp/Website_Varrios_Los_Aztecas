@@ -16,11 +16,7 @@ App.CONFIG = {
   // true  = start met voorbeelddata (leden, logboek, tickets …)
   // false = lege testomgeving: geen leden of gegevens, enkel het gangpot-profiel en de instellingen.
   //         Elke stand heeft zijn eigen opslag in de browser, dus terugschakelen brengt de voorbeelddata terug.
-  demoData: false,
-  demoPin: '1234',
-  demoBossCode: '2525',
-  demoOpslagCode: '7777',         // startcode van de Opslag loods (de Boss kan ze wijzigen)
-  demoGangpotCode: '3333'         // code om de gangpot aan te passen (bekijken mag iedereen; de Boss kan ze wijzigen)
+  demoData: false
 };
 
 App.RULES = {
@@ -54,7 +50,7 @@ App.MODULES = [
     routes: [{ path: 'agenda', label: 'Kalender', icon: 'calendar' }] },
   { id: 'gangpot', name: 'Gangpot', icon: 'crown', tone: 'gold',
     tagline: 'De kas van de familia',
-    desc: 'Wat er in de gangpot zit: geld, wapens en spullen. Iedereen kan meekijken, aanpassen kan enkel met de gangpot-code.',
+    desc: 'Wat er in de gangpot zit: geld, wapens en spullen. Iedereen kan meekijken, aanpassen kan wie de Boss daarvoor aanvinkte.',
     routes: [{ path: 'gangpot', label: 'Inhoud', icon: 'vault' }] },
   { id: 'amfiloods', name: 'Amfi loods', icon: 'flask', tone: 'sky', access: 'amfi',
     tagline: 'Bestellen via een ticket',
@@ -67,9 +63,9 @@ App.MODULES = [
       { path: 'loods',   label: 'Loods',   icon: 'warehouse' },
       { path: 'klanten', label: 'Klanten', icon: 'users' }
     ] },
-  { id: 'opslag', name: 'Opslag loods', icon: 'box', tone: 'warn', locked: true, access: 'opslag',
+  { id: 'opslag', name: 'Opslag loods', icon: 'box', tone: 'warn', access: 'opslag',
     tagline: 'Dagelijkse missies',
-    desc: 'Elke dag de base coke- en terrorbite-missie afvinken, en de voorraad base bijhouden. Enkel met de opslag-code.',
+    desc: 'Elke dag de base coke- en terrorbite-missie afvinken, en de voorraad base bijhouden.',
     routes: [{ path: 'opslag', label: 'Missies', icon: 'box' }] },
   { id: 'afwezigheid', name: 'Afwezigheid', icon: 'userx', tone: 'rose',
     tagline: 'Wie is er wanneer niet',
@@ -110,13 +106,17 @@ App.AGENDA = {
 // Toegang per lid — aan te vinken in Boss menu → Ledenlijst. Een afdeling met `access: '<key>'` in App.MODULES
 // is enkel open voor leden met dat vinkje. 'amfi' = toegang tot de Amfi loods (tickets maken),
 // 'amfi_staff' = amfi-medewerker (= user.amfi_staff, neemt tickets op; geeft automatisch ook toegang).
+// 'gangpot' = de gangpot aanpassen (bekijken mag iedereen), 'boss' = Boss menu (geeft ook gangpot + opslag).
+// De eigenaar (user.owner, Bob) heeft altijd alles.
 App.ACCESS = [
-  { key: 'amfi_staff', label: 'Amfi loods',   icon: 'flask', tone: 'sky', hint: 'medewerker' },
-  { key: 'amfi',       label: 'Amfi loods',   icon: 'flask', tone: 'sky' },
-  { key: 'wiet',       label: 'Wiet loods',   icon: 'leaf',  tone: 'lime' },
-  { key: 'opslag',     label: 'Opslag loods', icon: 'box',   tone: 'warn' }
+  { key: 'amfi_staff', label: 'Amfi loods',   icon: 'flask',  tone: 'sky', hint: 'medewerker' },
+  { key: 'amfi',       label: 'Amfi loods',   icon: 'flask',  tone: 'sky' },
+  { key: 'wiet',       label: 'Wiet loods',   icon: 'leaf',   tone: 'lime' },
+  { key: 'opslag',     label: 'Opslag loods', icon: 'box',    tone: 'warn' },
+  { key: 'gangpot',    label: 'Gangpot',      icon: 'vault',  tone: 'gold', hint: 'aanpassen' },
+  { key: 'boss',       label: 'Boss menu',    icon: 'shield', tone: 'violet' }
 ];
-App.ACCESS_DEFAULT = { wiet: true, opslag: false, amfi: false };   // voor nieuwe profielen
+App.ACCESS_DEFAULT = { wiet: true, opslag: false, amfi: false, gangpot: false, boss: false };   // voor nieuwe profielen
 
 // Rangen van Varrios Los Aztecas (volgorde = hoog → laag). lead = leiding (goud gevuld weergegeven).
 // icon = naam uit core/icons.js. De Boss kiest per lid een rang in Boss menu → Ledenlijst.
@@ -190,7 +190,7 @@ App.ERR = {
   MAX_ONVERWERKT_BEREIKT: 'Je zit aan de limiet van onverwerkte planten — wacht tot er meer verwerkt is.',
   KLANT_BESTAAT_AL: 'Die klant bestaat al.',
   KLANT_NIET_GEVONDEN: 'Klant niet gevonden.',
-  ONJUISTE_BOSSCODE: 'Bosscode klopt niet.',
+  ONJUISTE_BOSSCODE: 'Je hebt geen toegang tot het Boss menu.',
   ONGELDIGE_BATCH: 'Voer een geldige snelheid in (groter dan 0).',
   ONGELDIGE_DATUM: 'Kies een geldige periode.',
   EINDE_VOOR_START: 'De einddatum ligt voor de startdatum.',
@@ -210,8 +210,13 @@ App.ERR = {
   NIET_GEVONDEN: 'Niet (meer) gevonden.',
   ITEM_BESTAAT_AL: 'Dat item staat al in de gangpot.',
   TE_WEINIG_IN_POT: 'Er zit niet genoeg in de gangpot om dat eruit te halen.',
-  ONJUISTE_OPSLAGCODE: 'Opslag-code klopt niet.',
-  ONJUISTE_GANGPOTCODE: 'Gangpot-code klopt niet.',
+  ONJUISTE_OPSLAGCODE: 'Je hebt geen toegang tot de Opslag loods — vraag de Boss om je aan te vinken.',
+  ONJUISTE_GANGPOTCODE: 'Je mag de gangpot niet aanpassen — vraag de Boss om je aan te vinken.',
+  GEEN_BOSS: 'Je hebt geen toegang tot het Boss menu.',
+  NIET_INGELOGD: 'Je bent niet (meer) ingelogd — log opnieuw in met Discord.',
+  EIGENAAR: 'De eigenaar heeft altijd alle rechten: dat kan je niet wijzigen.',
+  ONGELDIG_DISCORD_ID: 'Dat is geen geldig Discord-ID (enkel cijfers, 17 à 20 lang).',
+  DISCORD_AL_GEBRUIKT: 'Dat Discord-ID is al gekoppeld aan een ander profiel.',
   MISSIE_AL_GEDAAN: 'Deze missie is vandaag al gedaan.',
   ONGELDIGE_MISSIE: 'Onbekende missie.',
   EVENT_VOORBIJ: 'Deze activiteit is al voorbij.',

@@ -8,6 +8,7 @@
   if (App.CONFIG.mode !== 'demo') return;
   const R = App.RULES, L = App.L, U = App.U;
   const KEY = App.CONFIG.demoData ? 'varrios-v2-demo-state' : 'varrios-v2-leeg-state';
+  const AUTH_KEY = KEY + '-auth';   // wie er in de demo "ingelogd" is
   const subs = new Set();
   let state = null;
 
@@ -211,12 +212,12 @@
     const now = Date.now();
     const names = ['siebe', 'ivar', 'bob', 'matis', 'dario', 'kenzo', 'yusuf', 'lars'];
     const users = names.map((name, i) => ({
-      id: U.uid(), name, pin: i < 7 ? App.CONFIG.demoPin : null, total_ingelegd: 0, opgehaald: 0,
+      id: U.uid(), name, pin: true, owner: i === 0, total_ingelegd: 0, opgehaald: 0,
       legacy_zakjes: 0, sort_order: i, avatar_url: null, discord_id: null, created_at: iso(now - 86400000 * (20 - i))
     }));
     ['oprichter', 'kolonel', 'generaal', 'adviseur', 'kapitein', 'veteraan', 'broeder', null].forEach((r, i) => { users[i].rank = r; });
-    users.forEach((u, i) => { u.access = { wiet: true, opslag: i < 6, amfi: i < 6 }; });
-    users.push({ id: U.uid(), name: 'gangpot', pin: App.CONFIG.demoPin, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0,
+    users.forEach((u, i) => { u.access = { wiet: true, opslag: i < 6, amfi: i < 6, boss: i < 2, gangpot: i < 3 }; });
+    users.push({ id: U.uid(), name: 'gangpot', pin: null, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0,
       sort_order: 99, avatar_url: null, discord_id: null, created_at: iso(now - 86400000 * 30) });
     const st = { users, log: [], customers: [], customerLog: [], baseline: { ...R.BASELINE_DEFAULT, set_at: iso(now) } };
 
@@ -290,7 +291,12 @@
           if (!u.access) u.access = { wiet: true, opslag: true };
           if (u.access.amfi === undefined) u.access.amfi = !!u.amfi_staff || L.isGangpot(u);   // amfi-toegang is nieuw: enkel medewerkers
         });
-        if (!state.settings.gangpot_code) state.settings.gangpot_code = App.CONFIG.demoGangpotCode;
+        // geen codes meer: wie kan inloggen = elk profiel behalve de gangpot; het eerste profiel is de eigenaar
+        state.users.forEach(u => { if (!L.isGangpot(u)) u.pin = true; });
+        if (!state.users.some(u => u.owner)) {
+          const first = state.users.filter(u => !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order)[0];
+          if (first) { first.owner = true; first.access = { ...first.access, boss: true }; }
+        }
         // nieuw amfi-model (winkels + vaste prijs per poeder): oude demo-tickets opnieuw aanmaken
         if (!state.tickets || !state.settings.amfi || !state.settings.amfi.winkels) seedAmfi(state);
         if (state.settings.amfi.prijs_wij_per_keer === 10000) state.settings.amfi.prijs_wij_per_keer = 7000;   // oude standaardprijs
@@ -313,41 +319,27 @@
     get state() { return state; },
     subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
 
-    // ---- profielen ----
-    async login(userId, pin) {
-      await latency();
-      const u = userById(userId);
-      if (!u.pin) throw E('GEBRUIKER_NIET_GEVONDEN');
-      if (u.pin !== pin) throw E('ONJUISTE_CODE');
-      return u;
+    // ---- inloggen: in de demo kies je gewoon een profiel (de echte site gebruikt Discord) ----
+    get auth() {
+      const id = U.storage.get(AUTH_KEY);
+      const ok = id && state.users.some(u => u.id === id && !L.isGangpot(u));
+      return { status: ok ? 'member' : 'anon', userId: ok ? id : null, discordId: null, discordName: null, error: null };
     },
-    async claimProfile(userId, pin) {
-      await latency();
-      const u = userById(userId);
-      if (u.pin) throw E('AL_GECLAIMD');
-      if (!pin || pin.length < 4) throw E('ONGELDIGE_CODE');
-      u.pin = pin; commit(); return u;
-    },
-    async createProfile(name, pin) {
+    async signIn(userId) { await latency(); userById(userId); U.storage.set(AUTH_KEY, userId); commit(); },
+    async signOut() { U.storage.del(AUTH_KEY); commit(); },
+    // demo: nieuw profiel maken en meteen inloggen; het eerste profiel wordt de eigenaar (zoals Bob)
+    async createProfile(name) {
       await latency();
       name = String(name || '').trim();
       if (state.users.length >= R.MAX_USERS) throw E('LOODS_VOL');
       if (!name) throw E('ONGELDIGE_NAAM');
       if (state.users.some(u => u.name.toLowerCase() === name.toLowerCase())) throw E('NAAM_BESTAAT_AL');
-      if (!pin || pin.length < 4) throw E('ONGELDIGE_CODE');
-      const u = { id: U.uid(), name, pin, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0, rank: null, access: { ...App.ACCESS_DEFAULT },
+      const first = !state.users.some(u => !L.isGangpot(u));
+      const u = { id: U.uid(), name, pin: true, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0, rank: null, owner: first,
+        access: { ...App.ACCESS_DEFAULT, boss: first },
         sort_order: Math.max(0, ...state.users.filter(x => !L.isGangpot(x)).map(x => x.sort_order)) + 1,
         avatar_url: null, discord_id: null, created_at: iso(Date.now()) };
-      state.users.push(u); commit(); return u;
-    },
-
-    // eigen code wijzigen (zoals fn_change_pin)
-    async changePin(userId, oldPin, newPin) {
-      await latency();
-      const u = userById(userId);
-      if (u.pin !== oldPin) throw E('ONJUISTE_HUIDIGE_CODE');
-      if (!newPin || newPin.length < 4) throw E('ONGELDIGE_CODE');
-      u.pin = newPin; commit();
+      state.users.push(u); U.storage.set(AUTH_KEY, u.id); commit(); return u;
     },
     // profielfoto (zoals fn_set_avatar; in de echte versie: upload naar Supabase Storage → publieke URL)
     async setAvatar(userId, dataUrl) {
@@ -402,11 +394,6 @@
     },
 
     // ---- boss ----
-    async verifyBoss(code) {
-      await latency();
-      if (code !== App.CONFIG.demoBossCode) throw E('ONJUISTE_BOSSCODE');
-      return true;
-    },
     async setSiteOnderhoud(on) {
       await latency();
       state.settings.site_onderhoud = !!on; commit();
@@ -542,12 +529,7 @@
       state.gangpot.items.splice(i, 1); commit();
     },
 
-    // ---- opslag loods (later: fn_verify_opslag / fn_complete_mission — die laatste doet ook de +600 base) ----
-    async verifyOpslag(code) {
-      await latency();
-      if (code !== state.settings.opslag_code) throw E('ONJUISTE_OPSLAGCODE');
-      return true;
-    },
+    // ---- opslag loods (fn_complete_mission doet ook de +600 base) ----
     async completeMission(type, userId) {
       await latency();
       const m = App.MISSIONS.find(x => x.id === type);
@@ -567,18 +549,6 @@
       gangpotBook(state, App.BASE_ITEM, 'stuks', delta, String(note || '').trim().slice(0, 120) || null, door);
       commit();
     },
-    // gangpot aanpassen vraagt een eigen code (later: fn_verify_gangpot, en de gangpot-RPC's checken die code)
-    async verifyGangpot(code) {
-      await latency();
-      if (code !== state.settings.gangpot_code) throw E('ONJUISTE_GANGPOTCODE');
-      return true;
-    },
-    async setGangpotCode(code) {
-      await latency();
-      code = String(code || '').trim();
-      if (!/^\d{4}$/.test(code)) throw E('ONGELDIGE_CODE');
-      state.settings.gangpot_code = code; commit();
-    },
     // boss: bijdrage van een lid voor een week (week = datum van de vervaldag) aan/uit vinken
     async bossSetGangpotPaid(userId, week, paid, door) {
       await latency();
@@ -587,12 +557,6 @@
       state.gangpotPayments = state.gangpotPayments.filter(p => !(p.user_id === u.id && p.week === week));
       if (paid) state.gangpotPayments.push({ id: U.uid(), week, user_id: u.id, user_name: u.name, paid_at: iso(Date.now()), door });
       commit();
-    },
-    async setOpslagCode(code) {
-      await latency();
-      code = String(code || '').trim();
-      if (!/^\d{4}$/.test(code)) throw E('ONGELDIGE_CODE');
-      state.settings.opslag_code = code; commit();
     },
 
     // ---- amfi loods: tickets (later: tabellen amfi_tickets + amfi_messages, RPC's per actie) ----
@@ -709,22 +673,21 @@
       state.log.push({ id: U.uid(), type: 'correctie', user_id: u.id, user_name: u.name, amount: 0, note, ts: iso(Date.now()) });
       commit();
     },
-    async bossResetPin(userId) {
-      await latency();
-      const u = userById(userId);
-      u.pin = null; commit();
-    },
     async bossDeleteProfile(userId) {
       await latency();
       const u = userById(userId);
       if (L.isGangpot(u)) throw E('GANGPOT_PROFIEL');
+      if (u.owner) throw E('EIGENAAR');
       state.users = state.users.filter(x => x.id !== userId);   // logboek blijft (met naam)
       commit();
     },
     async bossSetDiscord(userId, discordId) {
       await latency();
       const u = userById(userId);
-      u.discord_id = String(discordId || '').trim() || null; commit();
+      const id = String(discordId || '').trim() || null;
+      if (id && !/^\d{15,22}$/.test(id)) throw E('ONGELDIG_DISCORD_ID');
+      if (id && state.users.some(x => x.discord_id === id && x.id !== u.id)) throw E('DISCORD_AL_GEBRUIKT');
+      u.discord_id = id; commit();
     },
     // profiel aanmaken zonder code → "nog vrij", het lid kiest zelf zijn code bij de eerste login
     async bossCreateProfile({ name, rank, access, amfi_staff }) {
@@ -740,11 +703,12 @@
         avatar_url: null, discord_id: null, created_at: iso(Date.now()) };
       state.users.push(u); commit(); return u;
     },
-    // toegang aan/uit: 'wiet' | 'opslag' | 'amfi' | 'amfi_staff' (= amfi-medewerker, geeft ook amfi-toegang)
+    // toegang aan/uit: 'wiet' | 'opslag' | 'amfi' | 'amfi_staff' (= amfi-medewerker, geeft ook amfi-toegang) | 'gangpot' | 'boss'
     async bossSetAccess(userId, key, on) {
       await latency();
       const u = userById(userId);
       if (!App.ACCESS.some(a => a.key === key)) throw E('GEEN_TOEGANG');
+      if (u.owner) throw E('EIGENAAR');
       if (key === 'amfi_staff') { u.amfi_staff = !!on; if (on) u.access = { ...(u.access || {}), amfi: true }; }
       else {
         u.access = { ...(u.access || {}), [key]: !!on };
@@ -795,6 +759,6 @@
     },
 
     // ---- alleen demo ----
-    async resetDemo() { state = seed(); commit(); }
+    async resetDemo() { state = seed(); U.storage.del(AUTH_KEY); commit(); }
   };
 })(window.App);

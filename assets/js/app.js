@@ -1,19 +1,11 @@
 /* App-shell: router, sessie, sidebar/topbar/tabbar, live her-renderen. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, L = App.L, store = App.store;
-  const SESSION_KEY = 'varrios-v2-session';
-  // een login geldt enkel voor vandaag: na middernacht moet iedereen opnieuw inloggen
-  // (bij uitloggen gaan ook de boss-, opslag- en gangpot-code weer op slot)
-  const LOCK_KEYS = ['varrios-v2-boss', 'varrios-v2-opslag', 'varrios-v2-gangpot', 'varrios-v2-boss-h', 'varrios-v2-opslag-h', 'varrios-v2-gangpot-h'];
-  const today = () => U.dkey(new Date());
-  const readSession = () => {
-    try { const s = JSON.parse(U.storage.get(SESSION_KEY)); return s && s.id && s.day === today() ? s.id : null; }
-    catch (e) { return null; }
-  };
-  const lockAll = () => LOCK_KEYS.forEach(k => { try { sessionStorage.removeItem(k); } catch (e) { /* privémodus */ } });
-  let session = readSession();
-  let sessionDay = session ? today() : null;
-  if (!session && U.storage.get(SESSION_KEY)) { U.storage.del(SESSION_KEY); lockAll(); }
+  // wie ingelogd is, weet de store (Discord via Supabase; in de demo een gekozen profiel). Je blijft ingelogd tot je uitlogt.
+  // oude sleutels van het inloggen met codes opruimen
+  ['varrios-v2-session'].forEach(k => U.storage.del(k));
+  ['varrios-v2-boss', 'varrios-v2-opslag', 'varrios-v2-gangpot', 'varrios-v2-boss-h', 'varrios-v2-opslag-h', 'varrios-v2-gangpot-h']
+    .forEach(k => { try { sessionStorage.removeItem(k); } catch (e) { /* privémodus */ } });
 
   // vaste pagina's + één pagina per route van elke afdeling (afdelingen in opbouw → view 'soon')
   const PAGES = {
@@ -30,9 +22,9 @@
   App.moduleById = id => App.MODULES.find(m => m.id === id) || null;
 
   App.session = {
-    // na het inloggen blijf je op de afdeling die je in de lobby koos
-    set(id) { session = id; sessionDay = today(); U.storage.set(SESSION_KEY, JSON.stringify({ id, day: sessionDay })); App.rerender(); },
-    clear() { session = null; sessionDay = null; U.storage.del(SESSION_KEY); lockAll(); App.go('lobby'); App.rerender(); }
+    // demo: profiel kiezen; echte site: naar Discord (komt daarna terug op dezelfde pagina)
+    set(id) { return store.signIn(id); },
+    clear() { App.go('lobby'); return store.signOut(); }
   };
   App.go = path => { location.hash = '#/' + path; };
 
@@ -63,7 +55,7 @@
       <a class="sb-brand" href="#/lobby"><img src="assets/img/logo.png" alt="Varrios Los Aztecas" class="brand-logo"><div><b>Varrios</b><span>Los Aztecas · gangportaal</span></div></a>
       <div class="sb-group">${link('lobby', 'Lobby', 'home', 'gold')}</div>
       ${modules}
-      <div class="sb-group"><div class="sb-label">Beheer</div>${link('boss', 'Boss menu', 'shield', 'violet')}</div>
+      ${App.can('boss') ? `<div class="sb-group"><div class="sb-label">Beheer</div>${link('boss', 'Boss menu', 'shield', 'violet')}</div>` : ''}
       <div class="sb-spacer"></div>
       <div class="sb-status">${store.mode === 'demo' ? `<span class="status demo">${I('sparkle', 12)} demo-modus</span>` : ''}<span class="status live"><i></i>live gedeeld</span></div>
       <button class="sb-user" data-profile>
@@ -99,12 +91,13 @@
     const tab = (path, label, icon, tone) => `<a class="tab ${page.nav === path ? 'on' : ''}" href="#/${path}" style="--accent:var(--${tone})">${I(icon, 19)}<span>${label}</span></a>`;
     return tab('lobby', 'Lobby', 'home', 'gold')
       + mod.routes.map(r => tab(r.path, mod.routes.length > 1 ? r.label : mod.name, r.icon, mod.tone)).join('')
-      + tab('boss', 'Boss', 'shield', 'violet');
+      + (App.can('boss') ? tab('boss', 'Boss', 'shield', 'violet') : '');
   }
 
-  const bossBtn = () => `<button class="boss-btn ${App.boss.unlocked() ? 'on' : ''}" data-boss title="Boss menu">${I('shield', 15)}<span>Boss menu</span>${App.boss.unlocked() ? '<i></i>' : ''}</button>`;
+  // enkel voor wie het Boss menu mag openen
+  const bossBtn = () => App.boss.unlocked() ? `<button class="boss-btn on" data-boss title="Boss menu">${I('shield', 15)}<span>Boss menu</span><i></i></button>` : '';
 
-  // eigen profiel: foto, code wijzigen, uitloggen
+  // eigen profiel: foto, uitloggen
   function profileModal(ctx) {
     const { me, mine } = ctx;
     C.modal.open(`
@@ -124,17 +117,12 @@
           <button class="btn ghost danger-text" id="pm-photo-del" ${me.avatar_url ? '' : 'disabled'}>${I('trash', 14)} Foto verwijderen</button>
         </div>
       </div>
-      <form class="mng-block" id="pm-pin" autocomplete="off">
-        <span class="eyebrow">Code wijzigen</span>
-        <div class="row-3">
-          <input class="input mono" id="pm-old" type="password" inputmode="numeric" maxlength="12" placeholder="huidige">
-          <input class="input mono" id="pm-new" type="password" inputmode="numeric" maxlength="12" placeholder="nieuwe">
-          <input class="input mono" id="pm-new2" type="password" inputmode="numeric" maxlength="12" placeholder="herhaal">
-        </div>
-        <div class="err" id="pm-err"></div>
-        <button class="btn violet block" type="submit">${I('lock', 14)} Code wijzigen</button>
-        <p class="dim small">Code vergeten? Vraag de Boss om je code te resetten — daarna kies je bij het inloggen een nieuwe.</p>
-      </form>
+      <div class="mng-block">
+        <span class="eyebrow">Rechten</span>
+        <div class="perm-chips">${me.owner ? `<span class="rpill" style="--accent:var(--gold)">${I('crown', 11)}Eigenaar — alles</span>`
+          : App.ACCESS.filter(a => App.hasAccess(me, a.key)).map(a => `<span class="rpill" style="--accent:var(--${a.tone})">${I(a.icon, 11)}${a.label}${a.hint ? ` (${a.hint})` : ''}</span>`).join('') || '<span class="dim small">Nog geen extra rechten.</span>'}</div>
+        <p class="dim small">${store.mode === 'demo' ? 'Demo: je bent ingelogd met een gekozen profiel.' : 'Je bent ingelogd met Discord.'} Rechten geeft de Boss in <b>Boss menu → Ledenlijst</b>.</p>
+      </div>
       <div class="stack">
         <button class="btn ghost block" id="pm-logout">${I('logout', 15)} Uitloggen</button>
         ${store.mode === 'demo' ? `<button class="btn ghost block danger-text" id="pm-reset">${I('refresh', 15)} Demo-data resetten</button>` : ''}
@@ -144,17 +132,6 @@
       $('#pm-photo').addEventListener('click', pick);
       $('#pm-photo-pick').addEventListener('click', pick);
       $('#pm-photo-del').addEventListener('click', e => C.busy(e.currentTarget, async () => { await store.setAvatar(me.id, null); C.modal.close(); C.toast('Profielfoto verwijderd'); }));
-      $('#pm-pin').addEventListener('submit', e => {
-        e.preventDefault();
-        C.busy($('#pm-pin button[type=submit]'), async () => {
-          $('#pm-err').textContent = '';
-          try {
-            if ($('#pm-new').value !== $('#pm-new2').value) throw new Error('CODES_VERSCHILLEN');
-            await store.changePin(me.id, $('#pm-old').value, $('#pm-new').value);
-            C.modal.close(); C.toast('Code gewijzigd');
-          } catch (ex) { $('#pm-err').textContent = U.friendlyError(ex); }
-        });
-      });
       $('#pm-logout').addEventListener('click', () => { C.modal.close(); App.session.clear(); C.toast('Uitgelogd'); });
       $('#pm-reset')?.addEventListener('click', async () => { await store.resetDemo(); C.modal.close(); App.session.clear(); C.toast('Demo-data gereset'); });
     }, { wide: true });
@@ -176,8 +153,9 @@
   function buildCtx() {
     const state = store.state;
     const snap = L.snapshot(state);
-    let me = session ? state.users.find(u => u.id === session) || null : null;
-    if (session && !me) { session = null; U.storage.del(SESSION_KEY); }
+    const id = store.auth.userId;
+    const me = id ? state.users.find(u => u.id === id) || null : null;
+    App.me = me;
     const r = route();
     return { state, snap, me, mine: me ? snap.perUser.get(me.id) : null, params: r.slice(1), page: PAGES[r[0]], module: App.moduleById(PAGES[r[0]].module) };
   }
@@ -188,11 +166,10 @@
     const ctx = buildCtx();
     const r = route();
     const page = PAGES[r[0]];
-    // website in onderhoud (Boss menu → Website) → enkel wie de bosscode ingaf, komt verder
-    const onderhoud = App.preview.blocked(ctx.state);
-    if (!ctx.state.settings.site_onderhoud && App.preview.ok()) App.preview.set(false);
+    // website in onderhoud (Boss menu → Website) → enkel wie het Boss menu mag openen, komt verder
+    const onderhoud = !!ctx.state.settings.site_onderhoud && !App.can('boss');
     const authed = !!ctx.me && !onderhoud;
-    // niet ingelogd → altijd eerst "Wie ben jij?"; daarna kom je op de lobby (of op de pagina uit je link)
+    // niet ingelogd → eerst inloggen; daarna kom je op de lobby (of op de pagina uit je link)
     const blocked = authed && ctx.module && ctx.module.access && !App.hasAccess(ctx.me, ctx.module.access);
     const view = onderhoud ? App.views.onderhoud : !authed ? App.views.login : blocked ? noAccessView(ctx.module) : App.views[page.view];
     document.body.classList.toggle('is-auth', !authed);
@@ -223,16 +200,7 @@
   store.subscribe(() => App.rerender());
   window.addEventListener('hashchange', App.rerender);
   // wachtrij schuift op met de tijd: periodiek hertekenen, maar niet terwijl iemand typt
-  // nieuwe dag → uitloggen (ook na slaapstand: check bij terugkeren naar het tabblad)
-  const expired = () => {
-    if (!session || sessionDay === today()) return false;
-    C.modal.close(); App.session.clear(); C.toast('Nieuwe dag — log opnieuw in');
-    return true;
-  };
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) expired(); });
-  window.addEventListener('focus', expired);
   setInterval(() => {
-    if (expired()) return;
     const a = document.activeElement;
     const typing = a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA');
     if (!typing && !C.modal.isOpen()) App.rerender();

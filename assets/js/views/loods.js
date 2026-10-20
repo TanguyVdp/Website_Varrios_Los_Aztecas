@@ -206,7 +206,7 @@
         <div class="grid-2">${actionPanel(ctx)}${queueList(ctx)}</div>
         ${overview(ctx)}
         ${feed(ctx)}
-        <p class="footnote">Elke inleg en elke opname wordt met naam en tijdstip vastgelegd en is voor iedereen zichtbaar. De code voorkomt dat iemand anders onder jouw naam registreert.</p>`;
+        <p class="footnote">Elke inleg en elke opname wordt met naam en tijdstip vastgelegd en is voor iedereen zichtbaar. Je logt in met Discord, dus niemand anders kan onder jouw naam registreren.</p>`;
     },
     mount(ctx, root) {
       const { me } = ctx;

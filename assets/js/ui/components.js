@@ -10,13 +10,19 @@
     if (user.avatar_url) return `<span class="avatar" style="--s:${size}px;--c:${col};background-image:url('${U.esc(user.avatar_url)}')"></span>`;
     return `<span class="avatar" style="--s:${size}px;--c:${col}">${U.esc(U.initials(user.name))}</span>`;
   };
-  // toegang tot een afdeling (gangpot-profiel mag alles; 'amfi_staff' = amfi-medewerker)
+  // toegang tot een afdeling of recht (App.ACCESS). Eigenaar = alles; Boss menu geeft ook gangpot + opslag;
+  // het gangpot-profiel (kan niet inloggen) telt als "overal toegang" maar is geen Boss.
   App.hasAccess = (u, key) => {
     if (!u || !key) return true;
-    if (App.L.isGangpot(u)) return true;
+    if (u.owner) return true;
+    const a = u.access || {};
+    if (App.L.isGangpot(u)) return key !== 'boss' && key !== 'gangpot';
     if (key === 'amfi_staff') return !!u.amfi_staff;
-    return !!(u.access && u.access[key]);
+    if ((key === 'gangpot' || key === 'opslag') && a.boss) return true;
+    return !!a[key];
   };
+  // mag de ingelogde gebruiker dit? (App.me wordt gezet door app.js)
+  App.can = key => !!App.me && App.hasAccess(App.me, key);
 
   // bestandskiezer voor een profielfoto → verkleind → opslaan
   C.pickAvatar = userId => {

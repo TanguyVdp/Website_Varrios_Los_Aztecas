@@ -28,6 +28,8 @@ jobs:
           node-version: 20
 
       - name: Check wachtrij en meld klare zakjes
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node .github/scripts/discord-notify.mjs
 
       # agenda-bot: nieuwe activiteiten posten, antwoorden bijhouden, herinneringen (24u/2u) per DM
