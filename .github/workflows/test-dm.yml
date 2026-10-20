@@ -1,0 +1,31 @@
+name: "Test: DM van de bot"
+
+# Enkel handmatig: Actions → "Test: DM van de bot" → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      naam:
+        description: "Naam van het profiel op de site"
+        default: "Bob V."
+        required: true
+      bericht:
+        description: "Tekst van het privébericht"
+        default: "Test"
+        required: true
+
+jobs:
+  dm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Stuur DM
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          NAAM: ${{ inputs.naam }}
+          BERICHT: ${{ inputs.bericht }}
+        run: node .github/scripts/test-dm.mjs
