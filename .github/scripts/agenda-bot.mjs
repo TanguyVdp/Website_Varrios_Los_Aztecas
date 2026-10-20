@@ -9,6 +9,7 @@
 //     (wie die dag als afwezig gemeld staat, wordt overgeslagen). DM's die niet lukken
 //     (DM's uitgeschakeld) → één vermelding in het kanaal.
 //  4. Activiteit begonnen → knoppen uit. Activiteit verwijderd → bericht op "geannuleerd".
+//     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
 //     mededeling verwijderd op de site → bericht ook weg uit Discord.
@@ -227,6 +228,30 @@ async function main() {
       console.log(`Herinnering ${hours}u: ${ev.titel}`);
       await remind(ev, hours, rsvps, members, absences);
     }
+  }
+
+  await reorder(events, rsvps, members, now);
+}
+
+// Volgorde in het kanaal = volgorde van de datum. Komt er een activiteit tussen (later aangemaakt, maar vroeger),
+// dan worden de activiteiten die erna horen opnieuw gepost (nieuw bericht, oud weg). Antwoorden staan in de database,
+// dus er gaat niets verloren; de knoppen werken via event_id. Enkel open (nog niet begonnen) activiteiten.
+async function reorder(events, rsvps, members, now) {
+  const posts = await sb('agenda_discord?select=*&closed=eq.false');
+  const byEvent = new Map(posts.filter(p => p.channel_id === DISCORD_AGENDA_CHANNEL_ID).map(p => [p.event_id, p]));
+  const open = events.filter(ev => byEvent.has(ev.id) && now < startOf(ev))
+    .sort((a, b) => startOf(a) - startOf(b) || String(a.created_at).localeCompare(String(b.created_at)));
+  // langste begin van de lijst dat al in de juiste volgorde staat (bericht-ID's = tijdstip van posten)
+  let keep = 0, last = 0n;
+  for (const ev of open) { const id = BigInt(byEvent.get(ev.id).message_id); if (id < last) break; last = id; keep++; }
+  for (const ev of open.slice(keep)) {
+    const post = byEvent.get(ev.id);
+    const msg = buildMessage(ev, rsvps, members);
+    const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', msg);
+    await sbUpdate('agenda_discord', `event_id=eq.${ev.id}`, { message_id: sent.id, counts: JSON.stringify(msg.embeds[0].fields) });
+    try { await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'DELETE'); }
+    catch (e) { if (e.status !== 404) console.log(`Oud bericht ${ev.titel} verwijderen: ${e.message}`); }
+    console.log(`Opnieuw geplaatst (volgorde): ${ev.titel} (${ev.datum})`);
   }
 }
 
