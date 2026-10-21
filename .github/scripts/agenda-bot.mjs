@@ -275,7 +275,7 @@ function noticeComponents(n, s, ping) {
       { type: 10, content: n.tekst },
       { type: 14, divider: true, spacing: 2 },
       { type: 9,
-        components: [{ type: 10, content: `-# Geplaatst door\n**🛡️ ${n.door || 'Boss'}**\n-# <t:${unix}:f> · <t:${unix}:R>` }],
+        components: [{ type: 10, content: `-# Geplaatst door\n**👤 ${n.door || 'Boss'}**\n-# <t:${unix}:f> · <t:${unix}:R>` }],
         accessory: { type: 2, style: 5, label: 'Open de lobby', emoji: { name: '🏠' }, url: `${SITE_URL}#/lobby` } }
     ]
   };

@@ -526,8 +526,12 @@
   // ---- mededelingen ----
   const ui2 = { soort: 'info', tag: false, type: 'vergadering', datum: null, abs: 'aangevraagd' };
   const NOTICE_MAX = 1500;   // zelfde limiet als fn_add_notice (supabase/update-v2-mededeling-lang.sql)
-  function sMededeling({ state }) {
+  // ondertekening van een mededeling: rang uit de Ledenlijst + naam, bv. "Kapitein Bob V."
+  const signName = u => { const r = App.RANKS.find(x => x.id === u.rank); return r ? `${r.label} ${u.name}` : u.name; };
+  function sMededeling({ state, me }) {
     const K = App.NOTICE.KINDS;
+    const leden = state.users.filter(u => !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
+    if (!ui2.door || !leden.some(u => u.id === ui2.door)) ui2.door = me ? me.id : (leden[0] && leden[0].id);
     return `
       <div class="grid-2">
         <section class="card">
@@ -539,6 +543,9 @@
             <div class="field"><span>Tag in Discord</span>
               <button type="button" class="reason tag-chk ${ui2.tag ? 'on' : ''}" id="nt-tag" aria-pressed="${ui2.tag}" style="--accent:var(--violet)"><span class="box">${I('check', 12)}</span><span>@Varrios Los Aztecas taggen</span></button>
               <small class="muted">Aangevinkt = iedereen met die rol krijgt een melding in Discord.</small></div>
+            <label class="field"><span>Geplaatst door</span>
+              <select class="input select" id="nt-door">${leden.map(u => `<option value="${u.id}" ${u.id === ui2.door ? 'selected' : ''}>${U.esc(signName(u))}${me && u.id === me.id ? ' (jij)' : ''}</option>`).join('')}</select>
+              <small class="muted">Staat onder de mededeling in de lobby en in Discord. De rang komt uit de Ledenlijst.</small></label>
             <div class="err" id="nt-err"></div>
             <button class="btn gold block lg" type="submit">${I('megaphone', 16)} Plaatsen in de lobby</button>
           </form>
@@ -815,6 +822,7 @@
         root.querySelectorAll('[data-soort]').forEach(b => b.addEventListener('click', () => {
           ui2.soort = b.dataset.soort; root.querySelectorAll('[data-soort]').forEach(x => x.classList.toggle('on', x === b));
         }));
+        root.querySelector('#nt-door').addEventListener('change', e => { ui2.door = e.target.value; });
         const txt = root.querySelector('#nt-tekst'), count = root.querySelector('#nt-count');
         txt.addEventListener('input', () => { count.textContent = `${txt.value.length}/${NOTICE_MAX}`; });
         const tagBtn = root.querySelector('#nt-tag');
@@ -823,7 +831,11 @@
         form.addEventListener('submit', e => {
           e.preventDefault();
           C.busy(form.querySelector('button[type=submit]'), async () => {
-            try { await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort, tag: ui2.tag }, who); ui2.tag = false; C.toast('Mededeling staat in de lobby'); }
+            try {
+              const by = ctx.state.users.find(u => u.id === root.querySelector('#nt-door').value);
+              await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort, tag: ui2.tag }, by ? signName(by) : who);
+              ui2.tag = false; C.toast('Mededeling staat in de lobby');
+            }
             catch (ex) { root.querySelector('#nt-err').textContent = U.friendlyError(ex); }
           });
         });
