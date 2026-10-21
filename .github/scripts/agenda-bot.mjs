@@ -12,7 +12,7 @@
 //     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
-//     mededeling verwijderd op de site → bericht ook weg uit Discord.
+//     mededeling gewijzigd → bericht bijgewerkt; verwijderd op de site (uit de lobby) → het bericht BLIJFT in Discord.
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -293,31 +293,25 @@ async function notices() {
   // kolom notice_discord.sig bestaat pas na supabase/update-v2-mededeling-door.sql
   const hasSig = !posts.length || 'sig' in posts[0];
 
-  // gewijzigd op de site (of nog in de oude opmaak: sig leeg) → bericht bijwerken; lukt dat niet, opnieuw posten zonder tag
+  // gewijzigd op de site (bv. de ondertekening) → bericht bijwerken. Een mededelingbericht wordt NOOIT verwijderd:
+  // lukt bijwerken niet (bv. oude opmaak), dan blijft het oude bericht gewoon staan.
   for (const p of hasSig ? posts : []) {
     const n = byId.get(p.notice_id);
     if (!n || p.sig === noticeSig(n)) continue;
     const s = SOORT[n.soort] || SOORT.info;
     const ping = n.tag === true && /^\d+$/.test(ROLE_ID);
-    const body = { flags: 1 << 15, allowed_mentions: { parse: [] }, components: noticeComponents(n, s, ping) };
-    let messageId = p.message_id;
-    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', body); }
-    catch (e) {
-      const sent = await discord(`/channels/${p.channel_id}/messages`, 'POST', body);
-      messageId = sent.id;
-      try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); } catch (e2) { /* al weg */ }
-    }
-    await sbUpdate('notice_discord', `notice_id=eq.${p.notice_id}`, { message_id: messageId, sig: noticeSig(n) });
-    console.log(`Mededeling bijgewerkt in Discord: ${n.titel}`);
+    try {
+      await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', { flags: 1 << 15, allowed_mentions: { parse: [] }, components: noticeComponents(n, s, ping) });
+      console.log(`Mededeling bijgewerkt in Discord: ${n.titel}`);
+    } catch (e) { console.log(`Mededeling ${n.titel} niet bij te werken (blijft staan zoals ze is): ${e.message}`); }
+    await sbUpdate('notice_discord', `notice_id=eq.${p.notice_id}`, { sig: noticeSig(n) });
   }
 
-  // verwijderd op de site → ook weg uit Discord
+  // verwijderd op de site (uit de lobby) → het bericht in Discord blijft staan; enkel de koppeling opruimen
   for (const p of posts) {
     if (ids.has(p.notice_id)) continue;
-    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
-    catch (e) { if (e.status !== 404) { console.log(`Mededeling verwijderen: ${e.message}`); continue; } }
     await sbDelete('notice_discord', `notice_id=eq.${p.notice_id}`);
-    console.log(`Mededeling verwijderd uit Discord: ${p.notice_id}`);
+    console.log(`Mededeling uit de lobby gehaald, blijft in Discord: ${p.notice_id}`);
   }
 
   // nieuw → posten (enkel van de laatste 24u, zodat oude mededelingen er niet ineens allemaal in komen)

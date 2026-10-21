@@ -840,7 +840,7 @@
           });
         });
         root.querySelectorAll('[data-nt-del]').forEach(b => b.addEventListener('click', () =>
-          confirmModal('Mededeling verwijderen?', 'Ze verdwijnt uit de lobby.', 'Verwijderen', async () => { await App.store.deleteMededeling(b.dataset.ntDel); C.toast('Mededeling verwijderd'); })));
+          confirmModal('Mededeling uit de lobby halen?', 'Ze verdwijnt uit de lobby. In Discord blijft ze gewoon staan.', 'Uit de lobby halen', async () => { await App.store.deleteMededeling(b.dataset.ntDel); C.toast('Mededeling uit de lobby gehaald'); })));
       }
 
       if (sec === 'agenda') {
