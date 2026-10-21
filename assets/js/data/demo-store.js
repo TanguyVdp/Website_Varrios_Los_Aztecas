@@ -467,7 +467,7 @@
     },
     async addMededeling({ titel, tekst, soort, tag }, door) {
       await latency();
-      titel = String(titel || '').trim().slice(0, 80); tekst = String(tekst || '').trim().slice(0, 400);
+      titel = String(titel || '').trim().slice(0, 80); tekst = String(tekst || '').trim().slice(0, 1500);
       if (!titel) throw E('GEEN_TITEL');
       if (!tekst) throw E('GEEN_TEKST');
       if (!App.NOTICE.KINDS.some(k => k.id === soort)) throw E('ONGELDIG_TYPE');

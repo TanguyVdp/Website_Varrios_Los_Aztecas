@@ -525,6 +525,7 @@
 
   // ---- mededelingen ----
   const ui2 = { soort: 'info', tag: false, type: 'vergadering', datum: null, abs: 'aangevraagd' };
+  const NOTICE_MAX = 1500;   // zelfde limiet als fn_add_notice (supabase/update-v2-mededeling-lang.sql)
   function sMededeling({ state }) {
     const K = App.NOTICE.KINDS;
     return `
@@ -533,7 +534,7 @@
           ${C.cardHead('Nieuwe mededeling', 'megaphone')}
           <form class="stack" id="nt-form" autocomplete="off">
             <label class="field"><span>Titel</span><input class="input" id="nt-titel" maxlength="80" placeholder="bv. Vergadering verplaatst"></label>
-            <label class="field"><span>Bericht</span><textarea class="input" id="nt-tekst" rows="4" maxlength="400" placeholder="Wat moet de familia weten?"></textarea></label>
+            <label class="field"><span>Bericht <em class="dim mono" id="nt-count">0/${NOTICE_MAX}</em></span><textarea class="input" id="nt-tekst" rows="6" maxlength="${NOTICE_MAX}" placeholder="Wat moet de familia weten?"></textarea></label>
             <div class="field"><span>Soort</span><div class="reason-grid">${K.map(k => `<button type="button" class="reason ${ui2.soort === k.id ? 'on' : ''}" data-soort="${k.id}" style="--accent:var(--${k.tone})">${I(k.icon, 16)}<span>${k.label}</span></button>`).join('')}</div></div>
             <div class="field"><span>Tag in Discord</span>
               <button type="button" class="reason tag-chk ${ui2.tag ? 'on' : ''}" id="nt-tag" aria-pressed="${ui2.tag}" style="--accent:var(--violet)"><span class="box">${I('check', 12)}</span><span>@Varrios Los Aztecas taggen</span></button>
@@ -814,6 +815,8 @@
         root.querySelectorAll('[data-soort]').forEach(b => b.addEventListener('click', () => {
           ui2.soort = b.dataset.soort; root.querySelectorAll('[data-soort]').forEach(x => x.classList.toggle('on', x === b));
         }));
+        const txt = root.querySelector('#nt-tekst'), count = root.querySelector('#nt-count');
+        txt.addEventListener('input', () => { count.textContent = `${txt.value.length}/${NOTICE_MAX}`; });
         const tagBtn = root.querySelector('#nt-tag');
         tagBtn.addEventListener('click', () => { ui2.tag = !ui2.tag; tagBtn.classList.toggle('on', ui2.tag); tagBtn.setAttribute('aria-pressed', ui2.tag); });
         const form = root.querySelector('#nt-form');
