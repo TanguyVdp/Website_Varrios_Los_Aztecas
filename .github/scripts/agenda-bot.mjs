@@ -281,11 +281,35 @@ function noticeComponents(n, s, ping) {
   };
   return ping ? [{ type: 10, content: `🔔 <@&${ROLE_ID}>` }, box] : [box];
 }
+// wat er in het bericht staat: wijzigt dit (bv. de ondertekening), dan wordt het Discord-bericht bijgewerkt
+const noticeSig = n => JSON.stringify([n.titel, n.tekst, n.soort, n.door, !!n.tag]);
+
 async function notices() {
   if (!DISCORD_MEDEDELINGEN_CHANNEL_ID) { console.log('Geen mededelingen-kanaal ingesteld — overgeslagen.'); return; }
   const [list, posts] = await Promise.all([sb('notices?select=*&order=created_at.asc'), sb('notice_discord?select=*')]);
   const ids = new Set(list.map(n => n.id));
   const posted = new Set(posts.map(p => p.notice_id));
+  const byId = new Map(list.map(n => [n.id, n]));
+  // kolom notice_discord.sig bestaat pas na supabase/update-v2-mededeling-door.sql
+  const hasSig = !posts.length || 'sig' in posts[0];
+
+  // gewijzigd op de site (of nog in de oude opmaak: sig leeg) → bericht bijwerken; lukt dat niet, opnieuw posten zonder tag
+  for (const p of hasSig ? posts : []) {
+    const n = byId.get(p.notice_id);
+    if (!n || p.sig === noticeSig(n)) continue;
+    const s = SOORT[n.soort] || SOORT.info;
+    const ping = n.tag === true && /^\d+$/.test(ROLE_ID);
+    const body = { flags: 1 << 15, allowed_mentions: { parse: [] }, components: noticeComponents(n, s, ping) };
+    let messageId = p.message_id;
+    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', body); }
+    catch (e) {
+      const sent = await discord(`/channels/${p.channel_id}/messages`, 'POST', body);
+      messageId = sent.id;
+      try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); } catch (e2) { /* al weg */ }
+    }
+    await sbUpdate('notice_discord', `notice_id=eq.${p.notice_id}`, { message_id: messageId, sig: noticeSig(n) });
+    console.log(`Mededeling bijgewerkt in Discord: ${n.titel}`);
+  }
 
   // verwijderd op de site → ook weg uit Discord
   for (const p of posts) {
@@ -308,7 +332,7 @@ async function notices() {
       allowed_mentions: { parse: [], roles: ping ? [ROLE_ID] : [] },
       components: noticeComponents(n, s, ping)
     });
-    await sbInsert('notice_discord', { notice_id: n.id, channel_id: DISCORD_MEDEDELINGEN_CHANNEL_ID, message_id: sent.id });
+    await sbInsert('notice_discord', { notice_id: n.id, channel_id: DISCORD_MEDEDELINGEN_CHANNEL_ID, message_id: sent.id, ...(hasSig ? { sig: noticeSig(n) } : {}) });
     console.log(`Mededeling gepost: ${n.titel}${ping ? ' (rol getagd)' : ''}`);
   }
 }
