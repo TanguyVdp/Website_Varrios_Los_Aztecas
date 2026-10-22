@@ -96,7 +96,7 @@
     const isIn = ui.action === 'inleg';
     const disabled = isIn ? (!mine.gangpot && mine.ruimte <= 0) : mine.momTegoed <= 0;
     const quick = isIn
-      ? [100, 250, 500, 1000].map(v => `<button type="button" class="chip" data-quick="${v}">${U.num(v)}</button>`).join('')
+      ? [100, 200, 300, 400, 500].map(v => `<button type="button" class="chip" data-quick="${v}">${U.num(v)}</button>`).join('')
       : [10, 25, 50].map(v => `<button type="button" class="chip" data-quick="${v}">${v}</button>`).join('') + `<button type="button" class="chip" data-quick="${mine.momTegoed}">Alles · ${U.num(mine.momTegoed)}</button>`;
     return `
       <section class="card action" id="action-panel">
