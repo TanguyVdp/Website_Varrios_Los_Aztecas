@@ -106,7 +106,7 @@
         <div><h3>Base ${dir > 0 ? 'erbij' : 'eruit'}</h3><p class="muted small">Nu in de gangpot: <b class="mono">${U.num(it.aantal)}</b> base</p></div></div>
       <form class="stack" id="bm-form" autocomplete="off">
         <label class="field"><span>Hoeveel base</span><input class="input lg mono" id="bm-n" type="number" min="1" step="1" placeholder="0"></label>
-        <label class="field"><span>Waarom</span><input class="input" id="bm-note" maxlength="120" placeholder="${dir > 0 ? 'bv. extra gekregen' : 'bv. verkocht aan Ballas'}"></label>
+        <label class="field"><span>Waarom <em>(verplicht)</em></span><input class="input" id="bm-note" maxlength="120" required minlength="3" placeholder="${dir > 0 ? 'bv. extra gekregen' : 'bv. verkocht aan Ballas'}"></label>
         <div class="err" id="bm-err"></div>
         <button class="btn ${dir > 0 ? 'primary' : 'warn'} block" type="submit">${dir > 0 ? 'Toevoegen' : 'Eruit halen'}</button>
       </form>`, modal => {

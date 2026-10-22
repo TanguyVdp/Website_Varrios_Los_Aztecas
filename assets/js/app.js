@@ -47,7 +47,7 @@
       `<a class="sb-link ${page.nav === path ? 'on' : ''}" href="#/${path}" style="--accent:var(--${tone})">${I(icon, 16)}<span>${label}</span>${extra}</a>`;
     const modules = App.MODULES.map(m => `
       <div class="sb-group">
-        <div class="sb-label"><i class="sb-dot" style="--accent:var(--${m.tone})"></i>${m.name}${m.soon ? '<span class="soon">binnenkort</span>' : ''}${m.access && !App.hasAccess(me, m.access) ? `<span class="sb-lock" title="Geen toegang">${I('lock', 11)}</span>` : ''}</div>
+        <div class="sb-label"><i class="sb-dot" style="--accent:var(--${m.tone})"></i>${m.name}${m.soon ? '<span class="soon">binnenkort</span>' : m.onderhoud ? '<span class="soon">onderhoud</span>' : ''}${m.access && !App.hasAccess(me, m.access) ? `<span class="sb-lock" title="Geen toegang">${I('lock', 11)}</span>` : ''}</div>
         ${m.routes.map(r => link(r.path, r.label, r.icon, m.tone, r.path === 'klanten' ? `<span class="sb-count mono">${state.customers.length}</span>`
           : r.path === 'amfi' ? amfiBadge(state, me) : '')).join('')}
       </div>`).join('');
@@ -150,6 +150,29 @@
       </section>`
   });
 
+  // afdeling in onderhoud (App.MODULES → onderhoud: 'uitleg'); wie het Boss menu heeft, kan toch binnen kijken (deze sessie)
+  const PEEK = id => 'varrios-v2-peek-' + id;
+  const peeking = id => { try { return sessionStorage.getItem(PEEK(id)) === '1'; } catch (e) { return false; } };
+  const moduleOnderhoudView = m => ({
+    title: () => m.name,
+    render: () => `
+      <section class="card boss-lock noaccess mod-onderhoud" style="--accent:var(--${m.tone})">
+        <span class="lock-ic tone">${I(m.icon, 26)}</span>
+        <span class="rpill" style="--accent:var(--warn)">${I('clock', 11)}In onderhoud</span>
+        <h2>${m.name} is nog even dicht</h2>
+        <p class="muted">${U.esc(m.onderhoud)}</p>
+        <p class="dim small">Zodra de ${m.name.toLowerCase()} open gaat, laat de Boss het weten.</p>
+        <div class="row-2">
+          <a class="btn ghost" href="#/lobby">${I('back', 14)} Terug naar de lobby</a>
+          ${App.can('boss') ? `<button class="btn ghost" data-peek="${m.id}">${I('shield', 14)} Toch openen (Boss)</button>` : ''}
+        </div>
+      </section>`,
+    mount: (ctx, root) => root.querySelector('[data-peek]')?.addEventListener('click', e => {
+      try { sessionStorage.setItem(PEEK(e.currentTarget.dataset.peek), '1'); } catch (ex) { /* privémodus */ }
+      App.rerender();
+    })
+  });
+
   function buildCtx() {
     const state = store.state;
     const snap = L.snapshot(state);
@@ -171,7 +194,9 @@
     const authed = !!ctx.me && !onderhoud;
     // niet ingelogd → eerst inloggen; daarna kom je op de lobby (of op de pagina uit je link)
     const blocked = authed && ctx.module && ctx.module.access && !App.hasAccess(ctx.me, ctx.module.access);
-    const view = onderhoud ? App.views.onderhoud : !authed ? App.views.login : blocked ? noAccessView(ctx.module) : App.views[page.view];
+    const modOnderhoud = authed && ctx.module && ctx.module.onderhoud && !(App.can('boss') && peeking(ctx.module.id));
+    const view = onderhoud ? App.views.onderhoud : !authed ? App.views.login : modOnderhoud ? moduleOnderhoudView(ctx.module)
+      : blocked ? noAccessView(ctx.module) : App.views[page.view];
     document.body.classList.toggle('is-auth', !authed);
 
     const viewEl = document.getElementById('view');

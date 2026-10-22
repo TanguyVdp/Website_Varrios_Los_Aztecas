@@ -52,7 +52,9 @@ App.MODULES = [
     tagline: 'De kas van de familia',
     desc: 'Wat er in de gangpot zit: geld, wapens en spullen. Iedereen kan meekijken, aanpassen kan wie de Boss daarvoor aanvinkte.',
     routes: [{ path: 'gangpot', label: 'Inhoud', icon: 'vault' }] },
+  // onderhoud: zolang dit ingevuld is, ziet iedereen een "in onderhoud"-pagina met deze uitleg (Boss kan toch binnen kijken)
   { id: 'amfiloods', name: 'Amfi loods', icon: 'flask', tone: 'sky', access: 'amfi',
+    onderhoud: 'Wij proberen eerst de loods goed te upgraden, zodat hij al 2 volledige werknemers heeft voordat we mensen laten verwerken.',
     tagline: 'Bestellen via een ticket',
     desc: 'Breng amfetamine binnen voor mythische poeder: koop de ingrediënten zelf, of laat ze aankopen (€ 7.000 per poeder). Via een ticket en de wachtrij.',
     routes: [{ path: 'amfi', label: 'Tickets', icon: 'message' }] },
@@ -210,6 +212,7 @@ App.ERR = {
   NIET_GEVONDEN: 'Niet (meer) gevonden.',
   ITEM_BESTAAT_AL: 'Dat item staat al in de gangpot.',
   TE_WEINIG_IN_POT: 'Er zit niet genoeg in de gangpot om dat eruit te halen.',
+  REDEN_GANGPOT: 'Schrijf erbij wat het is of waarom (minstens 3 tekens) — zo blijft alles na te kijken in de historiek.',
   ONJUISTE_OPSLAGCODE: 'Je hebt geen toegang tot de Opslag loods — vraag de Boss om je aan te vinken.',
   ONJUISTE_GANGPOTCODE: 'Je mag de gangpot niet aanpassen — vraag de Boss om je aan te vinken.',
   GEEN_BOSS: 'Je hebt geen toegang tot het Boss menu.',

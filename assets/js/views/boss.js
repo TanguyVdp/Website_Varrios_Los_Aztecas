@@ -654,9 +654,30 @@
     }));
     root.querySelectorAll('[data-gp-del]').forEach(b => b.addEventListener('click', () => {
       const it = ctx.state.gangpot.items.find(x => x.id === b.dataset.gpDel);
-      if (it) confirmModal(`${U.esc(it.naam)} verwijderen?`, 'Het item verdwijnt uit de gangpot (de historiek blijft).', 'Verwijderen', async () => { await App.store.deleteGangpotItem(it.id); C.toast('Item verwijderd'); });
+      if (it) gpDelModal(it);
     }));
   };
+
+  // item verwijderen: reden verplicht, komt in de historiek (met wat er nog in zat)
+  function gpDelModal(it) {
+    C.modal.open(`
+      <div class="af-head"><span class="af-ic" style="--accent:var(--danger)">${I('trash', 18)}</span>
+        <div><h3>${U.esc(it.naam)} verwijderen?</h3><p class="muted small">Nu in de pot: ${App.boss.fmtItem(it)}. Dit komt in de historiek.</p></div></div>
+      <form class="stack" id="gd-form" autocomplete="off">
+        <label class="field"><span>Waarom verwijder je dit <em>(verplicht)</em></span><input class="input" id="gd-note" maxlength="120" required minlength="3" placeholder="bv. dubbel aangemaakt / alles verkocht"></label>
+        <div class="err" id="gd-err"></div>
+        <div class="row-2"><button type="button" class="btn ghost" data-modal-close>Annuleren</button><button class="btn danger" type="submit">${I('trash', 14)} Verwijderen</button></div>
+      </form>`, modal => {
+      const form = modal.querySelector('#gd-form');
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        C.busy(form.querySelector('button[type=submit]'), async () => {
+          try { await App.store.deleteGangpotItem(it.id, modal.querySelector('#gd-note').value); C.modal.close(); C.toast('Item verwijderd'); }
+          catch (ex) { modal.querySelector('#gd-err').textContent = U.friendlyError(ex); }
+        });
+      });
+    });
+  }
 
   // wekelijkse bijdrage afvinken (week = vervaldag; pijltjes = vorige/volgende week)
   const payUi = { offset: 0 };
@@ -711,7 +732,8 @@
         <div><h3>${U.esc(it.naam)} ${dir > 0 ? 'erbij' : 'eruit'}</h3><p class="muted small">Nu in de pot: ${App.boss.fmtItem(it)}</p></div></div>
       <form class="stack" id="gm-form" autocomplete="off">
         <label class="field"><span>Hoeveel ${it.eenheid === '€' ? '(€)' : `(${U.esc(it.eenheid)})`}</span><input class="input lg mono" id="gm-n" type="number" min="1" step="1" inputmode="numeric" placeholder="0"></label>
-        <label class="field"><span>Waarom <em>(optioneel)</em></span><input class="input" id="gm-note" maxlength="120" placeholder="${dir > 0 ? 'bv. opbrengst deal' : 'bv. meegegeven aan Kenzo'}"></label>
+        <label class="field"><span>${dir > 0 ? 'Wat is dit / waar komt het vandaan' : 'Waarom gaat het eruit'} <em>(verplicht)</em></span><input class="input" id="gm-note" maxlength="120" required minlength="3" placeholder="${dir > 0 ? 'bv. opbrengst deal met de Ballas' : 'bv. meegegeven aan Kenzo voor de overval'}">
+          <small class="dim">Komt in de historiek, met jouw naam erbij.</small></label>
         <div class="err" id="gm-err"></div>
         <button class="btn ${dir > 0 ? 'primary' : 'warn'} block" type="submit">${dir > 0 ? 'Toevoegen' : 'Eruit halen'}</button>
       </form>`, modal => {
@@ -740,6 +762,7 @@
           <label class="field"><span>Nu in de pot</span><input class="input mono" id="gn-aantal" type="number" min="0" step="1" value="0"></label>
         </div>
         <datalist id="gn-units"><option value="stuks"><option value="€"><option value="dozen"><option value="zakjes"><option value="kg"></datalist>
+        <label class="field"><span>Wat is dit / waar komt het vandaan <em>(verplicht als er al iets in zit)</em></span><input class="input" id="gn-note" maxlength="120" placeholder="bv. buit van de bankoverval"></label>
         <div class="err" id="gn-err"></div>
         <button class="btn gold block" type="submit">Toevoegen</button>
       </form>`, modal => {
@@ -748,7 +771,7 @@
         e.preventDefault();
         C.busy(form.querySelector('button[type=submit]'), async () => {
           try {
-            await App.store.addGangpotItem({ naam: modal.querySelector('#gn-naam').value, eenheid: modal.querySelector('#gn-eenheid').value, aantal: modal.querySelector('#gn-aantal').value }, gpWho(ctx));
+            await App.store.addGangpotItem({ naam: modal.querySelector('#gn-naam').value, eenheid: modal.querySelector('#gn-eenheid').value, aantal: modal.querySelector('#gn-aantal').value, note: modal.querySelector('#gn-note').value }, gpWho(ctx));
             C.modal.close(); C.toast('Item toegevoegd');
           } catch (ex) { modal.querySelector('#gn-err').textContent = U.friendlyError(ex); }
         });

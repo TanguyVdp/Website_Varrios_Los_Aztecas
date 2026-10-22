@@ -310,6 +310,8 @@
   const latency = () => U.wait(140 + Math.random() * 160);
   const userById = id => { const u = state.users.find(x => x.id === id); if (!u) throw E('GEBRUIKER_NIET_GEVONDEN'); return u; };
   const klantById = id => { const k = state.customers.find(x => x.id === id); if (!k) throw E('KLANT_NIET_GEVONDEN'); return k; };
+  // gangpot: reden verplicht (zoals _require_reden in supabase/update-v2-gangpot-reden.sql)
+  const needReden = note => { const v = String(note || '').trim().slice(0, 120); if (v.length < 3) throw E('REDEN_GANGPOT'); return v; };
   const posInt = n => { n = Number(n); if (!Number.isInteger(n) || n <= 0) throw E('ONGELDIG_AANTAL'); return n; };
 
   load();
@@ -497,16 +499,17 @@
       if (i < 0) throw E('NIET_GEVONDEN');
       state.events.splice(i, 1); commit();
     },
-    async addGangpotItem({ naam, eenheid, aantal }, door) {
+    async addGangpotItem({ naam, eenheid, aantal, note }, door) {
       await latency();
       naam = String(naam || '').trim().slice(0, 40); eenheid = String(eenheid || '').trim().slice(0, 12) || 'stuks';
       if (!naam) throw E('ONGELDIGE_NAAM');
       if (state.gangpot.items.some(i => i.naam.toLowerCase() === naam.toLowerCase())) throw E('ITEM_BESTAAT_AL');
       aantal = Number(aantal || 0);
       if (!Number.isFinite(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
+      const reden = aantal > 0 ? needReden(note) : null;
       const it = { id: U.uid(), naam, eenheid, aantal, sort_order: state.gangpot.items.length };
       state.gangpot.items.push(it);
-      state.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: naam, eenheid, delta: aantal, aantal_after: aantal, note: 'Nieuw item', door, ts: iso(Date.now()) });
+      state.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: naam, eenheid, delta: aantal, aantal_after: aantal, note: reden ? `Nieuw item — ${reden}` : 'Nieuw item', door, ts: iso(Date.now()) });
       commit();
     },
     // delta > 0 = erbij, < 0 = eruit
@@ -516,16 +519,20 @@
       if (!it) throw E('NIET_GEVONDEN');
       delta = Number(delta);
       if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
+      note = needReden(note);
       if (it.aantal + delta < 0) throw E('TE_WEINIG_IN_POT');
       it.aantal += delta;
       state.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: it.naam, eenheid: it.eenheid, delta, aantal_after: it.aantal,
-        note: String(note || '').trim().slice(0, 120) || null, door, ts: iso(Date.now()) });
+        note, door, ts: iso(Date.now()) });
       commit();
     },
-    async deleteGangpotItem(itemId) {
+    async deleteGangpotItem(itemId, note) {
       await latency();
       const i = state.gangpot.items.findIndex(x => x.id === itemId);
       if (i < 0) throw E('NIET_GEVONDEN');
+      note = needReden(note);
+      const it = state.gangpot.items[i];
+      state.gangpot.log.push({ id: U.uid(), item_id: null, item_naam: it.naam, eenheid: it.eenheid, delta: -it.aantal, aantal_after: 0, note: `Item verwijderd — ${note}`, door: App.me ? App.me.name : 'onbekend', ts: iso(Date.now()) });
       state.gangpot.items.splice(i, 1); commit();
     },
 
@@ -546,7 +553,7 @@
       await latency();
       delta = Number(delta);
       if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
-      gangpotBook(state, App.BASE_ITEM, 'stuks', delta, String(note || '').trim().slice(0, 120) || null, door);
+      gangpotBook(state, App.BASE_ITEM, 'stuks', delta, needReden(note), door);
       commit();
     },
     // boss: bijdrage van een lid voor een week (week = datum van de vervaldag) aan/uit vinken

@@ -339,10 +339,10 @@
     },
 
     // ---- gangpot (gangpot-code of bosscode) ----
-    async addGangpotItem({ naam, eenheid, aantal }, door) {
+    async addGangpotItem({ naam, eenheid, aantal, note }, door) {
       aantal = Number(aantal || 0);
       if (!Number.isFinite(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
-      await rpc('fn_gangpot_add_item', { p_naam: naam || '', p_eenheid: eenheid || '', p_aantal: aantal, p_door: door, p_code_hash: gangpotHash() });
+      await rpc('fn_gangpot_add_item', { p_naam: naam || '', p_eenheid: eenheid || '', p_aantal: aantal, p_door: door, p_code_hash: gangpotHash(), p_note: note || null });
       await after(['gpItems', 'gpLog']);
     },
     async mutateGangpot(itemId, delta, note, door) {
@@ -351,9 +351,9 @@
       await rpc('fn_gangpot_mutate', { p_item_id: itemId, p_delta: delta, p_note: note || null, p_door: door, p_code_hash: gangpotHash() });
       await after(['gpItems', 'gpLog']);
     },
-    async deleteGangpotItem(itemId) {
-      await rpc('fn_gangpot_delete_item', { p_item_id: itemId, p_code_hash: gangpotHash() });
-      await after(['gpItems']);
+    async deleteGangpotItem(itemId, note) {
+      await rpc('fn_gangpot_delete_item', { p_item_id: itemId, p_code_hash: gangpotHash(), p_note: note || null });
+      await after(['gpItems', 'gpLog']);
     },
     async bossSetGangpotPaid(userId, week, paid, door) {
       if (!DAY.test(week || '')) throw E('ONGELDIGE_DATUM');

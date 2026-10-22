@@ -1336,6 +1336,8 @@ button.chk:hover { border-color: var(--accent, var(--sky)); }
 .sb-lock { margin-left: auto; color: var(--dim); display: inline-flex; }
 .dept-badge.noacc { color: var(--danger); background: var(--danger-soft); border: 1px solid rgba(240,100,95,.25); }
 .noaccess { margin-top: 40px; }
+.mod-onderhoud { max-width: 480px; }
+.mod-onderhoud .row-2 { width: 100%; margin-top: 6px; }
 
 /* rangen — goudstijl van de Varrios-rangposter */
 .rank-pill { --accent: var(--gold); gap: 4px; color: var(--gold-2); background: rgba(244,180,26,.08); border-color: rgba(244,180,26,.35); }

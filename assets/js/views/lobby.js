@@ -192,7 +192,7 @@
         <span class="dept-bg">${I(m.icon, 150)}</span>
         <div class="dept-top">
           <span class="dept-ic">${I(m.icon, 22)}</span>
-          <span class="dept-badges">${m.access && ctx.me && !App.hasAccess(ctx.me, m.access) ? `<span class="dept-badge noacc">${I('lock', 11)} Geen toegang</span>` : ''}${m.soon ? `<span class="dept-badge soon">${I('sparkle', 11)} In opbouw</span>` : `<span class="dept-badge live"><i></i>Actief</span>`}</span>
+          <span class="dept-badges">${m.access && ctx.me && !App.hasAccess(ctx.me, m.access) ? `<span class="dept-badge noacc">${I('lock', 11)} Geen toegang</span>` : ''}${m.soon ? `<span class="dept-badge soon">${I('sparkle', 11)} In opbouw</span>` : m.onderhoud ? `<span class="dept-badge soon">${I('clock', 11)} In onderhoud</span>` : `<span class="dept-badge live"><i></i>Actief</span>`}</span>
         </div>
         <div class="dept-body">
           <h4>${m.name}</h4>
