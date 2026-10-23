@@ -8,7 +8,7 @@
 //  3. Herinnering per DM, 24u en 2u voor de start, aan wie nog niet geantwoord heeft
 //     (wie die dag als afwezig gemeld staat, wordt overgeslagen). DM's die niet lukken
 //     (DM's uitgeschakeld) → één vermelding in het kanaal.
-//  4. Activiteit begonnen → knoppen uit. Activiteit verwijderd → bericht op "geannuleerd".
+//  4. Activiteit begonnen → knoppen uit; 12u na de start → bericht weg uit het kanaal. Activiteit verwijderd → bericht op "geannuleerd".
 //     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
@@ -175,6 +175,21 @@ async function main() {
     } catch (e) { console.log(`Annuleren bericht ${p.message_id}: ${e.message}`); }
     await sbDelete('agenda_discord', `event_id=eq.${p.event_id}`);
     console.log(`Geannuleerd: ${p.event_id}`);
+  }
+
+  // afgelopen activiteit: 12u na de start het bericht uit het kanaal halen (op de site blijft ze in de kalender staan)
+  const oldPosts = posts.filter(p => p.closed);
+  if (oldPosts.length) {
+    const evs = await sb(`events?select=id,datum,tijd&id=in.(${oldPosts.map(p => p.event_id).join(',')})`);
+    const evById = new Map(evs.map(e => [e.id, e]));
+    for (const p of oldPosts) {
+      const ev = evById.get(p.event_id);
+      if (ev && now - startOf(ev) < 12 * HOUR) continue;
+      try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
+      catch (e) { if (e.status !== 404) { console.log(`Afgelopen bericht verwijderen: ${e.message}`); continue; } }
+      await sbDelete('agenda_discord', `event_id=eq.${p.event_id}`);
+      console.log(`Afgelopen, uit het kanaal gehaald: ${p.event_id}`);
+    }
   }
 
   for (const ev of events) {
