@@ -143,10 +143,47 @@ async function remind(ev, hours, rsvps, members, absences) {
     }
   }
   if (failed.length) {
-    await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', {
-      content: `⏰ ${failed.map(u => `<@${u.discord_id}>`).join(' ')} — "${ev.titel}" begint ${hours === 24 ? 'morgen' : 'binnen 2 uur'} en jullie hebben nog niet geantwoord. Klik op een knop in het bericht hierboven of op de site.`,
+    const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', {
+      content: pingText(ev, hours, failed.map(u => u.discord_id)),
       allowed_mentions: { users: failed.map(u => u.discord_id) }
     });
+    // onthouden, zodat de bot het bericht kan inkorten/weghalen zodra ze antwoorden (tabel agenda_pings)
+    try {
+      await sbInsert('agenda_pings', { message_id: sent.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, event_id: ev.id, hours,
+        users: failed.map(u => ({ id: u.id, discord_id: u.discord_id })) });
+    } catch (e) { console.log(`  agenda_pings bijhouden lukte niet: ${e.message}`); }
+  }
+}
+
+// vermelding in het kanaal voor wie geen DM kon krijgen
+const pingText = (ev, hours, discordIds) => `⏰ ${discordIds.map(id => `<@${id}>`).join(' ')} — "${ev.titel}" begint ${hours === 24 ? 'morgen' : 'binnen 2 uur'} en ${discordIds.length === 1 ? 'je hebt' : 'jullie hebben'} nog niet geantwoord. Klik op een knop in het bericht hierboven of op de site.`;
+
+// vermeldingen opruimen: wie intussen antwoordde gaat eruit (zonder opnieuw te taggen); iedereen geantwoord,
+// activiteit begonnen of verwijderd → bericht weg
+async function cleanPings(rsvps, now) {
+  let pings;
+  try { pings = await sb('agenda_pings?select=*'); } catch (e) { return; }   // tabel bestaat nog niet
+  if (!pings.length) return;
+  const evs = await sb(`events?select=id,titel,datum,tijd&id=in.(${[...new Set(pings.map(p => p.event_id))].join(',')})`);
+  const evById = new Map(evs.map(e => [e.id, e]));
+  for (const p of pings) {
+    const ev = evById.get(p.event_id);
+    const answered = new Set(rsvps.filter(r => r.event_id === p.event_id).map(r => r.user_id));
+    const left = (p.users || []).filter(u => !answered.has(u.id));
+    try {
+      if (!ev || now >= startOf(ev) || !left.length) {
+        try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
+        catch (e) { if (e.status !== 404) throw e; }
+        await sbDelete('agenda_pings', `message_id=eq.${p.message_id}`);
+        console.log(`Vermelding weggehaald: ${ev ? ev.titel : p.event_id}`);
+      } else if (left.length < (p.users || []).length) {
+        await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', {
+          content: pingText(ev, p.hours, left.map(u => u.discord_id)), allowed_mentions: { parse: [] }
+        });
+        await sbUpdate('agenda_pings', `message_id=eq.${p.message_id}`, { users: left });
+        console.log(`Vermelding ingekort (${left.length} over): ${ev.titel}`);
+      }
+    } catch (e) { console.log(`Vermelding ${p.message_id}: ${e.message}`); }
   }
 }
 
@@ -250,6 +287,7 @@ async function main() {
   }
 
   await reorder(events, rsvps, members, now);
+  await cleanPings(rsvps, now);
 }
 
 // Volgorde in het kanaal = volgorde van de datum. Komt er een activiteit tussen (later aangemaakt, maar vroeger),
