@@ -116,6 +116,9 @@ function buildMessage(ev, rsvps, members, closed = false) {
   };
 }
 
+// wat er in een agenda-bericht kan wijzigen (antwoorden + "geplaatst door") — anders → bericht bijwerken
+const msgSig = msg => JSON.stringify([msg.embeds[0].fields, msg.embeds[0].footer]);
+
 // ---------- tijd (TZ=Europe/Brussels in de workflow) ----------
 const dkey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 // zonder uur rekenen we met 12u00
@@ -203,7 +206,7 @@ async function main() {
       const msg = buildMessage(ev, rsvps, members);
       const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', { content: '📅 **Nieuwe activiteit in de agenda!**', ...msg });
       const left = start - now;
-      post = { event_id: ev.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, message_id: sent.id, counts: JSON.stringify(msg.embeds[0].fields),
+      post = { event_id: ev.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, message_id: sent.id, counts: msgSig(msg),
         // net geplaatst: geen herinnering voor een moment dat al voorbij is
         reminded_24: left < 24 * HOUR, reminded_2: left < 2 * HOUR, closed: false };
       await sbInsert('agenda_discord', post);
@@ -223,7 +226,7 @@ async function main() {
 
     // tellingen bijwerken als er iets veranderd is (bv. antwoord via de site)
     const msg = buildMessage(ev, rsvps, members);
-    const counts = JSON.stringify(msg.embeds[0].fields);
+    const counts = msgSig(msg);
     if (counts !== post.counts) {
       try {
         await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'PATCH', msg);
@@ -264,7 +267,7 @@ async function reorder(events, rsvps, members, now) {
     const post = byEvent.get(ev.id);
     const msg = buildMessage(ev, rsvps, members);
     const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', msg);
-    await sbUpdate('agenda_discord', `event_id=eq.${ev.id}`, { message_id: sent.id, counts: JSON.stringify(msg.embeds[0].fields) });
+    await sbUpdate('agenda_discord', `event_id=eq.${ev.id}`, { message_id: sent.id, counts: msgSig(msg) });
     try { await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'DELETE'); }
     catch (e) { if (e.status !== 404) console.log(`Oud bericht ${ev.titel} verwijderen: ${e.message}`); }
     console.log(`Opnieuw geplaatst (volgorde): ${ev.titel} (${ev.datum})`);

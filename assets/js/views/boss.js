@@ -526,12 +526,21 @@
   // ---- mededelingen ----
   const ui2 = { soort: 'info', tag: false, type: 'vergadering', datum: null, abs: 'aangevraagd' };
   const NOTICE_MAX = 1500;   // zelfde limiet als fn_add_notice (supabase/update-v2-mededeling-lang.sql)
-  // ondertekening van een mededeling: rang uit de Ledenlijst + naam, bv. "Kapitein Bob V."
+  // ondertekening (mededeling, agenda): rang uit de Ledenlijst + naam, bv. "Kapitein Bob V."
   const signName = u => { const r = App.RANKS.find(x => x.id === u.rank); return r ? `${r.label} ${u.name}` : u.name; };
-  function sMededeling({ state, me }) {
-    const K = App.NOTICE.KINDS;
+  // keuzelijst "Geplaatst door" (standaard jijzelf); id = 'nt-door' of 'ev-door'
+  function doorField({ state, me }, id, hint) {
     const leden = state.users.filter(u => !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
     if (!ui2.door || !leden.some(u => u.id === ui2.door)) ui2.door = me ? me.id : (leden[0] && leden[0].id);
+    return `<label class="field"><span>Geplaatst door</span>
+      <select class="input select" id="${id}">${leden.map(u => `<option value="${u.id}" ${u.id === ui2.door ? 'selected' : ''}>${U.esc(signName(u))}${me && u.id === me.id ? ' (jij)' : ''}</option>`).join('')}</select>
+      <small class="muted">${hint} De rang komt uit de Ledenlijst.</small></label>`;
+  }
+  // naam voor "door" uit de keuzelijst (valt terug op "Boss (naam)")
+  const doorFrom = (root, id, ctx, who) => { const u = ctx.state.users.find(x => x.id === root.querySelector('#' + id)?.value); return u ? signName(u) : who; };
+  function sMededeling(ctx) {
+    const { state } = ctx;
+    const K = App.NOTICE.KINDS;
     return `
       <div class="grid-2">
         <section class="card">
@@ -543,9 +552,7 @@
             <div class="field"><span>Tag in Discord</span>
               <button type="button" class="reason tag-chk ${ui2.tag ? 'on' : ''}" id="nt-tag" aria-pressed="${ui2.tag}" style="--accent:var(--violet)"><span class="box">${I('check', 12)}</span><span>@Varrios Los Aztecas taggen</span></button>
               <small class="muted">Aangevinkt = iedereen met die rol krijgt een melding in Discord.</small></div>
-            <label class="field"><span>Geplaatst door</span>
-              <select class="input select" id="nt-door">${leden.map(u => `<option value="${u.id}" ${u.id === ui2.door ? 'selected' : ''}>${U.esc(signName(u))}${me && u.id === me.id ? ' (jij)' : ''}</option>`).join('')}</select>
-              <small class="muted">Staat onder de mededeling in de lobby en in Discord. De rang komt uit de Ledenlijst.</small></label>
+            ${doorField(ctx, 'nt-door', 'Staat onder de mededeling in de lobby en in Discord.')}
             <div class="err" id="nt-err"></div>
             <button class="btn gold block lg" type="submit">${I('megaphone', 16)} Plaatsen in de lobby</button>
           </form>
@@ -558,7 +565,8 @@
   }
 
   // ---- agenda ----
-  function sAgenda({ state }) {
+  function sAgenda(ctx) {
+    const { state } = ctx;
     const T = App.AGENDA.TYPES;
     const today = U.dkey(new Date());
     const komend = state.events.filter(e => e.datum >= today).sort((a, b) => (a.datum + (a.tijd || '')).localeCompare(b.datum + (b.tijd || '')));
@@ -578,6 +586,7 @@
               <label class="field"><span>Plaats <em>(optioneel)</em></span><input class="input" id="ev-plaats" maxlength="80" placeholder="bv. Clubhuis"></label>
             </div>
             <label class="field"><span>Info <em>(optioneel)</em></span><textarea class="input" id="ev-info" rows="2" maxlength="300" placeholder="Wat moet iedereen weten of meebrengen?"></textarea></label>
+            ${doorField(ctx, 'ev-door', 'Staat bij de activiteit op de site en in Discord.')}
             <div class="err" id="ev-err"></div>
             <button class="btn cyan block lg" type="submit">${I('calendar', 16)} In de agenda zetten</button>
           </form>
@@ -855,8 +864,7 @@
           e.preventDefault();
           C.busy(form.querySelector('button[type=submit]'), async () => {
             try {
-              const by = ctx.state.users.find(u => u.id === root.querySelector('#nt-door').value);
-              await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort, tag: ui2.tag }, by ? signName(by) : who);
+              await App.store.addMededeling({ titel: root.querySelector('#nt-titel').value, tekst: root.querySelector('#nt-tekst').value, soort: ui2.soort, tag: ui2.tag }, doorFrom(root, 'nt-door', ctx, who));
               ui2.tag = false; C.toast('Mededeling staat in de lobby');
             }
             catch (ex) { root.querySelector('#nt-err').textContent = U.friendlyError(ex); }
@@ -875,12 +883,13 @@
         C.rangeCalendar(pop, { single: true, start: ui2.datum, end: ui2.datum, min: U.dkey(new Date()), onChange(s) { ui2.datum = s; showDay(); setTimeout(() => { pop.hidden = true; trig.classList.remove('open'); }, 180); } });
         trig.addEventListener('click', () => { pop.hidden = !pop.hidden; trig.classList.toggle('open', !pop.hidden); });
         showDay();
+        root.querySelector('#ev-door').addEventListener('change', e => { ui2.door = e.target.value; });
         const form = root.querySelector('#ev-form');
         form.addEventListener('submit', e => {
           e.preventDefault();
           C.busy(form.querySelector('button[type=submit]'), async () => {
             try {
-              await App.store.addEvent({ titel: root.querySelector('#ev-titel').value, type: ui2.type, datum: ui2.datum, tijd: root.querySelector('#ev-tijd').value, plaats: root.querySelector('#ev-plaats').value, info: root.querySelector('#ev-info').value }, who);
+              await App.store.addEvent({ titel: root.querySelector('#ev-titel').value, type: ui2.type, datum: ui2.datum, tijd: root.querySelector('#ev-tijd').value, plaats: root.querySelector('#ev-plaats').value, info: root.querySelector('#ev-info').value }, doorFrom(root, 'ev-door', ctx, who));
               ui2.datum = null; C.toast('Staat in de agenda');
             } catch (ex) { root.querySelector('#ev-err').textContent = U.friendlyError(ex); }
           });
