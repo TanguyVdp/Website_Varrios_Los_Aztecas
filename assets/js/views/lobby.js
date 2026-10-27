@@ -171,7 +171,7 @@
           ${nextEventStat(ctx)}
           ${stat('gold', 'users', 'Familia', `${leden}<small>/${R.MAX_USERS}</small>`, 'actieve leden')}
           ${stat('gold', 'crown', 'Gangpot', '€ ' + U.num(App.gangpotCash(state)), 'cash in de pot')}
-          <div class="lh-stat mis-sum" style="--accent:var(--warn)">
+          ${!App.can('opslag') ? stat('rose', 'userx', 'Afwezig', U.num(App.absInfo(state).now.length), 'leden nu afwezig') : `<div class="lh-stat mis-sum" style="--accent:var(--warn)">
             <span class="lh-stat-ic">${I('box', 15)}</span>
             <div>
               <span class="lh-stat-label">Missies vandaag</span>
@@ -180,7 +180,7 @@
                   <i>${done ? I('check', 10) : ''}</i>${m.short}${done ? `<em>${U.esc(done.user_name)}</em>` : ''}
                 </span>`).join('')}</div>
             </div>
-          </div>
+          </div>`}
         </div>
       </section>`;
   }
@@ -208,16 +208,17 @@
   App.views.lobby = {
     title: () => 'Lobby',
     render(ctx) {
-      const live = App.MODULES.filter(m => !m.soon).length;
+      const mods = App.visibleModules(ctx.me);
+      const live = mods.filter(m => !m.soon).length;
       return `
         ${hero(ctx)}
         ${mededelingen(ctx)}
         <section class="lobby-section">
           <div class="ls-head">
             <div><span class="eyebrow">Kies je bestemming</span><h3>Afdelingen</h3></div>
-            <span class="muted small">${live} actief · ${App.MODULES.length - live} in opbouw</span>
+            <span class="muted small">${live} actief${mods.length > live ? ` · ${mods.length - live} in opbouw` : ''}</span>
           </div>
-          <div class="dept-grid">${App.MODULES.map(m => deptCard(m, ctx)).join('')}</div>
+          <div class="dept-grid">${mods.map(m => deptCard(m, ctx)).join('')}</div>
         </section>
         <footer class="lobby-foot"><img src="assets/img/logo-mark.png" alt=""><span>Varrios Los Aztecas · familia primero</span></footer>`;
     }

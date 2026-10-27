@@ -45,7 +45,7 @@
     const { me, mine, state } = ctx;
     const link = (path, label, icon, tone, extra = '') =>
       `<a class="sb-link ${page.nav === path ? 'on' : ''}" href="#/${path}" style="--accent:var(--${tone})">${I(icon, 16)}<span>${label}</span>${extra}</a>`;
-    const modules = App.MODULES.map(m => `
+    const modules = App.visibleModules(me).map(m => `
       <div class="sb-group">
         <div class="sb-label"><i class="sb-dot" style="--accent:var(--${m.tone})"></i>${m.name}${m.soon ? '<span class="soon">binnenkort</span>' : m.onderhoud ? '<span class="soon">onderhoud</span>' : ''}${m.access && !App.hasAccess(me, m.access) ? `<span class="sb-lock" title="Geen toegang">${I('lock', 11)}</span>` : ''}</div>
         ${m.routes.map(r => link(r.path, r.label, r.icon, m.tone, r.path === 'klanten' ? `<span class="sb-count mono">${state.customers.length}</span>`

@@ -9,8 +9,9 @@ App.views = {};
 App.CONFIG = {
   // 'demo'     = nepdata in de browser (localStorage), raakt NOOIT de echte database
   // 'supabase' = de echte gedeelde database (zelfde Supabase-project als de oude Wietloods-site)
-  //              ?demo achter de URL (bv. http://localhost:8765/?demo) forceert lokaal de demo-modus
-  mode: /[?&]demo\b/.test(location.search) ? 'demo' : 'supabase',
+  //              ?demo achter de URL forceert de demo-modus; lokaal (Go Live, localhost, dubbelklik) is het altijd demo,
+  //              behalve met ?live (inloggen met Discord werkt lokaal toch niet: die link staat niet in Supabase)
+  mode: /[?&]demo\b/.test(location.search) || (/^(localhost|127\.0\.0\.1|)$/.test(location.hostname) && !/[?&]live\b/.test(location.search)) ? 'demo' : 'supabase',
   // publieke sleutel (zoals in de oude app): lezen mag iedereen, schrijven gaat enkel via de RPC-functies
   supabase: { url: 'https://tblkwyrmtccfggtelnsj.supabase.co', anonKey: 'sb_publishable_pqkMMN1YXz8mMd56_92BUQ_jKSQCfWx' },
   // true  = start met voorbeelddata (leden, logboek, tickets …)
@@ -65,15 +66,18 @@ App.MODULES = [
       { path: 'loods',   label: 'Loods',   icon: 'warehouse' },
       { path: 'klanten', label: 'Klanten', icon: 'users' }
     ] },
-  { id: 'opslag', name: 'Opslag loods', icon: 'box', tone: 'warn', access: 'opslag',
-    tagline: 'Dagelijkse missies',
-    desc: 'Elke dag de base coke- en terrorbite-missie afvinken, en de voorraad base bijhouden.',
-    routes: [{ path: 'opslag', label: 'Missies', icon: 'box' }] },
   { id: 'afwezigheid', name: 'Afwezigheid', icon: 'userx', tone: 'rose',
     tagline: 'Wie is er wanneer niet',
     desc: 'Meld van wanneer tot wanneer je er niet bent, met een reden — zo weet de familia op wie ze kan rekenen.',
-    routes: [{ path: 'afwezig', label: 'Overzicht', icon: 'userx' }] }
+    routes: [{ path: 'afwezig', label: 'Overzicht', icon: 'userx' }] },
+  // hidden: enkel zichtbaar (lobby, zijbalk) voor wie toegang heeft — staat daarom altijd achteraan
+  { id: 'opslag', name: 'Opslag loods', icon: 'box', tone: 'warn', access: 'opslag', hidden: true,
+    tagline: 'Dagelijkse missies',
+    desc: 'Elke dag de base coke- en terrorbite-missie afvinken, en de voorraad base bijhouden.',
+    routes: [{ path: 'opslag', label: 'Missies', icon: 'box' }] }
 ];
+// de afdelingen die iemand te zien krijgt (verborgen afdelingen enkel met toegang)
+App.visibleModules = me => App.MODULES.filter(m => !m.hidden || (me && App.hasAccess(me, m.access)));
 
 // Afwezigheid: redenen (tone = kleur in lijst en planning). 'andere' vraagt verplicht een toelichting.
 App.ABSENCE = {
