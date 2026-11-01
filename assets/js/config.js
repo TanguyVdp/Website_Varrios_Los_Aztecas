@@ -159,7 +159,7 @@ App.GANGPOT_DUE_DAY = 3;
 // ⚠️ Zelfde lijst in de Discord-bot: supabase/functions/discord-agenda/index.ts (REDENEN).
 App.AGENDA.RSVP = [
   { id: 'aanwezig',  label: 'Aanwezig',  icon: 'check',   tone: 'lime' },
-  { id: 'misschien', label: 'Misschien', icon: 'clock',   tone: 'warn' },
+  { id: 'misschien', label: 'Misschien', icon: 'clock',   tone: 'warn', old: true },   // old: geen keuze meer (sinds 01/11/2026), oude antwoorden blijven zichtbaar
   { id: 'afwezig',   label: 'Afwezig',   icon: 'x',       tone: 'danger' }
 ];
 App.AGENDA.AFWEZIG = [

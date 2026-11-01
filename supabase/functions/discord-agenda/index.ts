@@ -24,7 +24,7 @@ const API = "https://discord.com/api/v10";
 // ---------- agenda-bericht (kopie van agenda-bot.mjs) ----------
 const RSVP = [
   { id: "aanwezig", label: "Aanwezig", emoji: "✅", style: 3 },
-  { id: "misschien", label: "Misschien", emoji: "🤔", style: 2 },
+  { id: "misschien", label: "Misschien", emoji: "🤔", style: 2, old: true },   // geen knop meer; oude antwoorden blijven zichtbaar
   { id: "afwezig", label: "Afwezig", emoji: "❌", style: 4 },
 ];
 const TYPES: Record<string, { label: string; emoji: string; color: number }> = {
@@ -46,6 +46,17 @@ const columns = (title: string, list: string[]) => {
   return [0, 1, 2].map((i) => ({ name: i === 0 ? title : "​", value: names(list.slice(i * per, (i + 1) * per)).replace(/^—$/, i === 0 ? "—" : "​"), inline: true }));
 };
 
+// één veld per antwoord ("misschien" enkel als iemand dat vroeger koos), aangevuld tot een volle rij van 3
+// deno-lint-ignore no-explicit-any
+const rsvpFields = (mine: any[]) => {
+  const f = RSVP.map((s) => {
+    const l = mine.filter((r) => r.status === s.id).map((r) => r.user_name + (r.reden ? ` *(${r.reden})*` : ""));
+    return s.old && !l.length ? null : { name: `${s.emoji} ${s.label} (${l.length})`, value: names(l), inline: true };
+  }).filter(Boolean);
+  while (f.length % 3) f.push({ name: "​", value: "​", inline: true });
+  return f;
+};
+
 // deno-lint-ignore no-explicit-any
 function buildMessage(ev: any, rsvps: any[], members: any[], closed = false) {
   const t = TYPES[ev.type] || TYPES.andere;
@@ -63,10 +74,7 @@ function buildMessage(ev: any, rsvps: any[], members: any[], closed = false) {
       description: lines.join("\n"),
       color: t.color,
       fields: [
-        ...RSVP.map((s) => {
-          const l = mine.filter((r) => r.status === s.id).map((r) => r.user_name + (r.reden ? ` *(${r.reden})*` : ""));
-          return { name: `${s.emoji} ${s.label} (${l.length})`, value: names(l), inline: true };
-        }),
+        ...rsvpFields(mine),
         ...(open.length ? columns(`⏳ Geen antwoord (${open.length})`, open) : [{ name: "⏳ Geen antwoord (0)", value: "Iedereen heeft geantwoord 🎉" }]),
       ],
       footer: { text: `${t.label} · geplaatst door ${ev.door || "Boss"}` },
@@ -74,7 +82,7 @@ function buildMessage(ev: any, rsvps: any[], members: any[], closed = false) {
     components: [{
       type: 1,
       components: [
-        ...RSVP.map((s) => ({ type: 2, style: s.style, label: s.label, emoji: { name: s.emoji }, custom_id: `rsvp:${ev.id}:${s.id}`, disabled: closed })),
+        ...RSVP.filter((s) => !s.old).map((s) => ({ type: 2, style: s.style, label: s.label, emoji: { name: s.emoji }, custom_id: `rsvp:${ev.id}:${s.id}`, disabled: closed })),
         { type: 2, style: 5, label: "Open op de site", url: `${SITE_URL}#/agenda/${ev.id}` },
       ],
     }],
@@ -158,7 +166,8 @@ Deno.serve(async (req) => {
 
   // 1. knop
   if (kind === "rsvp") {
-    if (!RSVP.some((s) => s.id === arg)) return ephemeral("Onbekende knop.");
+    if (arg === "misschien") return ephemeral("\"Misschien\" kan niet meer — kies ✅ Aanwezig of ❌ Afwezig.");
+    if (!RSVP.some((s) => s.id === arg && !s.old)) return ephemeral("Onbekende knop.");
     if (arg !== "afwezig") return await save(arg, null, "button");
     // afwezig → eerst een reden kiezen (keuzelijst, enkel zichtbaar voor wie klikte)
     const ref = dm ? `:${i.message?.id ?? ""}` : "";

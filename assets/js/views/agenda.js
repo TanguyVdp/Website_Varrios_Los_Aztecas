@@ -1,5 +1,5 @@
 /* Agenda: maandkalender + eerstvolgende activiteiten. De Boss plaatst activiteiten (boss.js → Agenda),
- * leden melden zich aan: aanwezig / misschien / afwezig (reden verplicht: keuze uit App.AGENDA.AFWEZIG of zelf typen) — ook via de Discord-bot. Per dag zie je ook wie er afwezig is. */
+ * leden melden zich aan: aanwezig / afwezig (misschien kan niet meer) (reden verplicht: keuze uit App.AGENDA.AFWEZIG of zelf typen) — ook via de Discord-bot. Per dag zie je ook wie er afwezig is. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, T = App.AGENDA.TYPES;
   const ui = { month: null };   // eerste dag van de getoonde maand ('YYYY-MM-DD'), null = deze maand
@@ -21,7 +21,7 @@
     const rs = (state.rsvps || []).filter(x => x.event_id === e.id);
     const mine = me && rs.find(x => x.user_id === me.id);
     const past = relDay(e.datum).diff < 0;
-    const counts = RS.map(s => { const n = rs.filter(x => x.status === s.id).length; return `<span class="rs-count" style="--accent:var(--${s.tone})" title="${s.label}">${I(s.icon, 11)}${n}</span>`; }).join('');
+    const counts = RS.map(s => { const n = rs.filter(x => x.status === s.id).length; return s.old && !n ? '' : `<span class="rs-count" style="--accent:var(--${s.tone})" title="${s.label}">${I(s.icon, 11)}${n}</span>`; }).join('');
     const you = !me ? '' : mine
       ? `<span class="rpill" style="--accent:var(--${rsvpOf(mine.status).tone})">Jij: ${rsvpOf(mine.status).label.toLowerCase()}</span>`
       : past ? '' : `<span class="rpill hot" style="--accent:var(--warn)">${I('alert', 11)}Nog niet geantwoord</span>`;
@@ -96,7 +96,7 @@
       ${me && r.diff >= 0 ? `
       <form class="rs-form" id="rs-form" autocomplete="off">
         <span class="eyebrow">Ben jij erbij?</span>
-        <div class="rs-opts">${RS.map(s => `<button type="button" class="reason ${sel.status === s.id ? 'on' : ''}" data-rs="${s.id}" style="--accent:var(--${s.tone})">${I(s.icon, 16)}<span>${s.label}</span></button>`).join('')}</div>
+        <div class="rs-opts">${RS.filter(s => !s.old).map(s => `<button type="button" class="reason ${sel.status === s.id ? 'on' : ''}" data-rs="${s.id}" style="--accent:var(--${s.tone})">${I(s.icon, 16)}<span>${s.label}</span></button>`).join('')}</div>
         <div class="field" id="rs-reden-wrap" ${sel.status === 'afwezig' ? '' : 'hidden'}>
           <span>Waarom ben je er niet bij? <em>(verplicht)</em></span>
           <div class="reason-grid">${AFW.map(r => `<button type="button" class="reason ${sel.reden === r.id ? 'on' : ''}" data-rr="${r.id}" style="--accent:var(--${r.tone})">${I(r.icon, 15)}<span>${r.label}</span></button>`).join('')}</div>
@@ -106,7 +106,7 @@
         <div class="err" id="rs-err"></div>
         <button class="btn cyan block" type="submit" id="rs-save" ${sel.status ? '' : 'disabled'}>${mine ? 'Antwoord wijzigen' : 'Antwoord opslaan'}</button>
       </form>` : ''}
-      <div class="rs-groups">${RS.map(group).join('')}</div>
+      <div class="rs-groups">${RS.filter(s => !s.old || rs.some(x => x.status === s.id)).map(group).join('')}</div>
       ${nogNiet.length ? `<div class="ev-absent"><span class="eyebrow">Nog niet geantwoord (${nogNiet.length})</span><div>${nogNiet.map(u => `<span class="rpill" style="--accent:var(--muted)">${U.esc(u.name)}</span>`).join('')}</div></div>` : ''}
       ${weg.length ? `<div class="ev-absent"><span class="eyebrow">Afwezig gemeld die dag</span><div>${weg.map(a => `<span class="rpill" style="--accent:var(--rose)">${U.esc(a.user_name)}</span>`).join('')}</div></div>` : ''}`, modal => {
       const form = modal.querySelector('#rs-form');
