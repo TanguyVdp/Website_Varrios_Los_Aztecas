@@ -1364,3 +1364,6 @@ button.chk:hover { border-color: var(--accent, var(--sky)); }
   .shop-card .prod-row { grid-template-columns: minmax(0, 1fr) 76px 50px 30px; }
   .amfi-cd { align-items: flex-start; text-align: left; }
 }
+/* werken als gangpot (Boss): knop rechtsboven om terug te schakelen */
+.status.act-gp { cursor: pointer; white-space: nowrap; color: var(--gold); background: var(--gold-soft); border-color: rgba(244,180,26,.35); font-weight: 600; }
+.status.act-gp:hover { filter: brightness(1.12); }

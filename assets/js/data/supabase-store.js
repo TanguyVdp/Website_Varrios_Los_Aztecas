@@ -345,7 +345,7 @@
     async createAmfiTicket(userId, { opmerking }) {
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
-      if (AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
+      if (!L.isGangpot(u) && AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
       const quote = AM.quote(state.settings.amfi);
       // de database vult ticketnummer en plaats in de wachtrij in
       const intro = AM.intro({ nr: '{nr}', user_name: u.name, quote }, '{pos}');

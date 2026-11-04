@@ -501,8 +501,9 @@
       await latency();
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
-      if (state.tickets.some(t => t.user_id === u.id && AM.OPEN(t.status))) throw E('AL_OPEN_TICKET');
-      if (AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
+      // de gangpot (Boss die als gangpot werkt): onbeperkt tickets, geen cooldown
+      if (!L.isGangpot(u) && state.tickets.some(t => t.user_id === u.id && AM.OPEN(t.status))) throw E('AL_OPEN_TICKET');
+      if (!L.isGangpot(u) && AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
       const t = newTicket(state, u, String(opmerking || '').trim().slice(0, 300), iso(Date.now()));
       commit(); return t;
     },

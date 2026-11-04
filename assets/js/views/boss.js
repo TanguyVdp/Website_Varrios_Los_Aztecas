@@ -425,7 +425,7 @@
           <p class="muted small">Wat er voor de loods gekocht en in de loods gelegd is. Enkel producten uit ${Object.keys(byShop).map(n => `<b>${U.esc(n)}</b>`).join(', ') || 'een toegelaten winkel'}${geweigerd.length ? ` — niet uit ${geweigerd.map(U.esc).join(', ')}` : ''}. De prijs komt uit de instellingen hieronder.</p>
           <form class="stack" id="ink-form" autocomplete="off">
             <div class="row-2">
-              <label class="field"><span>Gekocht door</span><select class="input" id="ink-user">${leden.map(u => `<option value="${u.id}" ${ctx.me && u.id === ctx.me.id ? 'selected' : ''}>${U.esc(u.name)}</option>`).join('')}</select></label>
+              <label class="field"><span>Gekocht door</span><select class="input" id="ink-user">${leden.map(u => `<option value="${u.id}" ${ctx.me && u.id === ctx.me.id ? 'selected' : ''}>${U.esc(u.name)}</option>`).join('')}${(gp => gp ? `<option value="${gp.id}" ${ctx.me && ctx.me.id === gp.id ? 'selected' : ''}>Gangpot — voorraad die er al ligt</option>` : '')(state.users.find(L.isGangpot))}</select></label>
               <label class="field"><span>Product</span><select class="input" id="ink-prod">${Object.entries(byShop).map(([w, ps]) => `<optgroup label="${U.esc(w)}">${ps.map(p => `<option value="${U.esc(p.naam)}" data-prijs="${p.prijs}">${U.esc(p.naam)} — ${mEur(p.prijs)}${p.zwart ? ' zwart' : ''}</option>`).join('')}</optgroup>`).join('')}</select></label>
             </div>
             <div class="row-2">
@@ -521,7 +521,7 @@
   // ---------- boss-rechten: vinkje "Boss menu" of eigenaar ----------
   App.boss = {
     unlocked,
-    who: ctx => (ctx && ctx.me ? `Boss (${ctx.me.name})` : 'Boss'),
+    who: ctx => { const u = App.realMe || (ctx && ctx.me); return u ? `Boss (${u.name})` : 'Boss'; },
     open(target = 'boss') {
       if (unlocked()) App.go(target); else C.toast(App.ERR.GEEN_BOSS);
     }

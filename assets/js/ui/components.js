@@ -22,7 +22,8 @@
     return !!a[key];
   };
   // mag de ingelogde gebruiker dit? (App.me wordt gezet door app.js)
-  App.can = key => !!App.me && App.hasAccess(App.me, key);
+  // als gangpot werken (app.js): je houdt de rechten van je eigen account (App.realMe) erbij
+  App.can = key => !!App.me && (App.hasAccess(App.me, key) || (!!App.realMe && App.realMe !== App.me && App.hasAccess(App.realMe, key)));
 
   // bestandskiezer voor een profielfoto → verkleind → opslaan
   C.pickAvatar = userId => {

@@ -24,7 +24,7 @@
   App.session = {
     // demo: profiel kiezen; echte site: naar Discord (komt daarna terug op dezelfde pagina)
     set(id) { return store.signIn(id); },
-    clear() { App.go('lobby'); return store.signOut(); }
+    clear() { try { localStorage.removeItem('varrios-v2-als-gangpot'); } catch (e) { /* privémodus */ } App.go('lobby'); return store.signOut(); }
   };
   App.go = path => { location.hash = '#/' + path; };
 
@@ -80,6 +80,7 @@
       <div class="tb-right">
         ${store.mode === 'demo' ? `<span class="status demo">${I('sparkle', 12)} demo</span>` : ''}
         <span class="status live"><i></i>live</span>
+        ${App.actingAs ? `<button class="status act-gp" data-act-back title="Terug naar je eigen account">${I('swap', 12)} Als gangpot · terug naar <span class="tcap">${U.esc(App.realMe.name)}</span></button>` : ''}
         ${bossBtn()}
         <button class="tb-avatar" data-profile aria-label="Profiel">${C.avatar(ctx.me, 32)}</button>
       </div>`;
@@ -123,6 +124,11 @@
           : App.ACCESS.filter(a => App.hasAccess(me, a.key)).map(a => `<span class="rpill" style="--accent:var(--${a.tone})">${I(a.icon, 11)}${a.label}${a.hint ? ` (${a.hint})` : ''}</span>`).join('') || '<span class="dim small">Nog geen extra rechten.</span>'}</div>
         <p class="dim small">${store.mode === 'demo' ? 'Demo: je bent ingelogd met een gekozen profiel.' : 'Je bent ingelogd met Discord.'} Rechten geeft de Boss in <b>Boss menu → Ledenlijst</b>.</p>
       </div>
+      ${App.actingAs || (App.realMe && App.hasAccess(App.realMe, 'boss') && ctx.state.users.some(L.isGangpot)) ? `<div class="mng-block">
+        <span class="eyebrow">Gangpot-account</span>
+        <p class="dim small">${App.actingAs ? `Je werkt nu als <b>gangpot</b> (ingelogd als <span class="tcap">${U.esc(App.realMe.name)}</span>). Tickets, inleg en inkoop gaan op naam van de gangpot.` : 'Werk als het gangpot-account: tickets maken (zonder limiet of cooldown), inleggen en inkoop gaan dan op naam van de gangpot. Je Boss menu blijft.'}</p>
+        <button class="btn ${App.actingAs ? 'ghost' : 'gold'} block" id="pm-act">${I('swap', 15)} ${App.actingAs ? `Terug naar ${U.esc(App.realMe.name)}` : 'Werken als Gangpot'}</button>
+      </div>` : ''}
       <div class="stack">
         <button class="btn ghost block" id="pm-logout">${I('logout', 15)} Uitloggen</button>
         ${store.mode === 'demo' ? `<button class="btn ghost block danger-text" id="pm-reset">${I('refresh', 15)} Demo-data resetten</button>` : ''}
@@ -132,6 +138,7 @@
       $('#pm-photo').addEventListener('click', pick);
       $('#pm-photo-pick').addEventListener('click', pick);
       $('#pm-photo-del').addEventListener('click', e => C.busy(e.currentTarget, async () => { await store.setAvatar(me.id, null); C.modal.close(); C.toast('Profielfoto verwijderd'); }));
+      $('#pm-act')?.addEventListener('click', () => { const on = !App.actingAs; C.modal.close(); App.actAsGangpot(on); C.toast(on ? 'Je werkt nu als gangpot' : 'Terug op je eigen account'); });
       $('#pm-logout').addEventListener('click', () => { C.modal.close(); App.session.clear(); C.toast('Uitgelogd'); });
       $('#pm-reset')?.addEventListener('click', async () => { await store.resetDemo(); C.modal.close(); App.session.clear(); C.toast('Demo-data gereset'); });
     }, { wide: true });
@@ -173,12 +180,24 @@
     })
   });
 
+  // "werken als gangpot": wie het Boss menu heeft, kan overschakelen naar het gangpot-profiel (onthouden in deze browser).
+  // De Boss-rechten blijven (App.can kijkt ook naar App.realMe); de database aanvaardt het omdat Boss namens iemand mag handelen.
+  const ACT_KEY = 'varrios-v2-als-gangpot';
+  const actingGp = () => { try { return localStorage.getItem(ACT_KEY) === '1'; } catch (e) { return false; } };
+  App.actAsGangpot = on => {
+    try { if (on) localStorage.setItem(ACT_KEY, '1'); else localStorage.removeItem(ACT_KEY); } catch (e) { /* privémodus */ }
+    App.rerender();
+  };
+
   function buildCtx() {
     const state = store.state;
     const snap = L.snapshot(state);
     const id = store.auth.userId;
-    const me = id ? state.users.find(u => u.id === id) || null : null;
-    App.me = me;
+    const real = id ? state.users.find(u => u.id === id) || null : null;
+    const gp = state.users.find(L.isGangpot);
+    const acting = !!(real && gp && actingGp() && App.hasAccess(real, 'boss'));
+    const me = acting ? gp : real;
+    App.me = me; App.realMe = real; App.actingAs = acting;
     const r = route();
     return { state, snap, me, mine: me ? snap.perUser.get(me.id) : null, params: r.slice(1), page: PAGES[r[0]], module: App.moduleById(PAGES[r[0]].module) };
   }
@@ -217,6 +236,7 @@
     viewEl.classList.toggle('enter', isNewPage);
     viewEl.innerHTML = view.render(ctx);
     document.querySelectorAll('[data-boss]').forEach(b => b.addEventListener('click', () => App.boss.open()));
+    document.querySelectorAll('[data-act-back]').forEach(b => b.addEventListener('click', () => { App.actAsGangpot(false); C.toast('Terug op je eigen account'); }));
     if (view.mount) view.mount(ctx, viewEl);
     if (isNewPage) window.scrollTo(0, 0);
   };
@@ -246,4 +266,4 @@
     viewEl.innerHTML = `<div class="auth"><div class="auth-card"><span class="lock-ic" style="margin:0 auto 12px">${I('alert', 26)}</span><h2>Kan de database niet bereiken</h2>
       <p class="muted">${U.esc(U.friendlyError(e))}</p><button class="btn ghost" onclick="location.reload()">${I('refresh', 14)} Opnieuw proberen</button></div></div>`;
   });
-})(window.App);
+})(window.App);

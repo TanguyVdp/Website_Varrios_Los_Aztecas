@@ -8,13 +8,18 @@
   const nr = t => '#' + String(t.nr).padStart(3, '0');
 
   const isStaff = ctx => !!(ctx.me && ctx.me.amfi_staff) || App.boss.unlocked();
-  const actor = ctx => ({ userId: ctx.me.id, boss: App.boss.unlocked(), name: ctx.me.amfi_staff || !App.boss.unlocked() ? ctx.me.name : App.boss.who(ctx) });
+  // wie de actie doet. Als gangpot werken: in een gangpot-ticket ben je de gangpot, bij andermans ticket je eigen account
+  const actor = (ctx, t) => {
+    const u = App.actingAs && !(t && t.user_id === ctx.me.id) ? App.realMe : ctx.me;
+    return { userId: u.id, boss: App.boss.unlocked(), name: u.amfi_staff || !App.boss.unlocked() || u === ctx.me && App.actingAs ? u.name : App.boss.who(ctx) };
+  };
+  const isGp = ctx => !!ctx.me && App.L.isGangpot(ctx.me);   // gangpot: onbeperkt tickets, geen cooldown
   const byQueue = (a, b) => new Date(a.created_at) - new Date(b.created_at);
   const pill = (map, k) => { const s = map[k] || map.ruil; return `<span class="rpill" style="--accent:var(--${s.tone})">${I(s.icon, 11)}${s.label}</span>`; };
   const fmt = n => AM.eur(n);
 
   // cooldown van de ingelogde persoon (null = mag een ticket maken) — ook gebruikt in de lobby
-  App.amfiCooldown = ctx => ctx.me ? AM.cooldownUntil(ctx.state.tickets, ctx.me.id, ctx.state.settings.amfi) : null;
+  App.amfiCooldown = ctx => ctx.me && !isGp(ctx) ? AM.cooldownUntil(ctx.state.tickets, ctx.me.id, ctx.state.settings.amfi) : null;
   // "wo 6 nov. om 14:32" + "nog 1d 3u"
   App.amfiCooldownText = until => {
     const ms = until - Date.now(), m = Math.max(1, Math.ceil(ms / 60000));
@@ -71,7 +76,7 @@
     const busy = state.tickets.filter(t => t.status === 'bezig').sort(byQueue);
     const done = state.tickets.filter(t => !AM.OPEN(t.status)).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 10);
     const tab = staff ? ui.tab : 'mijn';
-    const open = mine.find(t => AM.OPEN(t.status));
+    const open = isGp(ctx) ? null : mine.find(t => AM.OPEN(t.status));   // de gangpot mag altijd een nieuw ticket maken
     const canNew = !open && !App.amfiCooldown(ctx);
     return `
       <section class="abs-hero amfi-hero">
@@ -282,7 +287,7 @@
       if (form) {
         const ta = form.querySelector('#chat-text');
         const send = () => C.busy(form.querySelector('button'), async () => {
-          try { await App.store.ticketMessage(t.id, actor(ctx), ta.value); ta.value = ''; root.querySelector('#chat-text')?.focus(); }
+          try { await App.store.ticketMessage(t.id, actor(ctx, t), ta.value); ta.value = ''; root.querySelector('#chat-text')?.focus(); }
           catch (ex) { C.toast(U.friendlyError(ex), 'error'); }
         });
         form.addEventListener('submit', e => { e.preventDefault(); send(); });
@@ -292,7 +297,7 @@
       root.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => {
         const st = b.dataset.status;
         const go = () => C.busy(b, async () => {
-          try { await App.store.setTicketStatus(t.id, st, actor(ctx)); C.toast({ klaar: 'Ruil afgerond', wachtrij: 'Ticket terug in de wachtrij', geannuleerd: 'Ticket geannuleerd' }[st]); }
+          try { await App.store.setTicketStatus(t.id, st, actor(ctx, t)); C.toast({ klaar: 'Ruil afgerond', wachtrij: 'Ticket terug in de wachtrij', geannuleerd: 'Ticket geannuleerd' }[st]); }
           catch (ex) { C.toast(U.friendlyError(ex), 'error'); }
         });
         if (st === 'klaar') finishModal(t, ctx, go);
