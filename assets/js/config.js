@@ -49,10 +49,6 @@ App.MODULES = [
     tagline: 'Wat staat er op de planning',
     desc: 'Vergaderingen, acties, deals en feesten van de familia. De Boss plaatst ze, iedereen ziet ze.',
     routes: [{ path: 'agenda', label: 'Kalender', icon: 'calendar' }] },
-  { id: 'gangpot', name: 'Gangpot', icon: 'crown', tone: 'gold',
-    tagline: 'De kas van de familia',
-    desc: 'Wat er in de gangpot zit: geld, wapens en spullen. Iedereen kan meekijken, aanpassen kan wie de Boss daarvoor aanvinkte.',
-    routes: [{ path: 'gangpot', label: 'Inhoud', icon: 'vault' }] },
   // onderhoud: zolang dit ingevuld is, ziet iedereen een "in onderhoud"-pagina met deze uitleg (Boss kan toch binnen kijken)
   { id: 'amfiloods', name: 'Amfi loods', icon: 'flask', tone: 'sky', access: 'amfi',
     onderhoud: 'Wij proberen eerst de loods goed te upgraden, zodat hij al 2 volledige werknemers heeft voordat we mensen laten verwerken.',
@@ -73,7 +69,7 @@ App.MODULES = [
   // hidden: enkel zichtbaar (lobby, zijbalk) voor wie toegang heeft — staat daarom altijd achteraan
   { id: 'opslag', name: 'Opslag loods', icon: 'box', tone: 'warn', access: 'opslag', hidden: true,
     tagline: 'Dagelijkse missies',
-    desc: 'Elke dag de base coke- en terrorbite-missie afvinken, en de voorraad base bijhouden.',
+    desc: 'Elke dag de base coke- en terrorbite-missie afvinken.',
     routes: [{ path: 'opslag', label: 'Missies', icon: 'box' }] }
 ];
 // de afdelingen die iemand te zien krijgt (verborgen afdelingen enkel met toegang)
@@ -112,17 +108,16 @@ App.AGENDA = {
 // Toegang per lid — aan te vinken in Boss menu → Ledenlijst. Een afdeling met `access: '<key>'` in App.MODULES
 // is enkel open voor leden met dat vinkje. 'amfi' = toegang tot de Amfi loods (tickets maken),
 // 'amfi_staff' = amfi-medewerker (= user.amfi_staff, neemt tickets op; geeft automatisch ook toegang).
-// 'gangpot' = de gangpot aanpassen (bekijken mag iedereen), 'boss' = Boss menu (geeft ook gangpot + opslag).
+// 'boss' = Boss menu (geeft ook opslag).
 // De eigenaar (user.owner, Bob) heeft altijd alles.
 App.ACCESS = [
   { key: 'amfi_staff', label: 'Amfi loods',   icon: 'flask',  tone: 'sky', hint: 'medewerker' },
   { key: 'amfi',       label: 'Amfi loods',   icon: 'flask',  tone: 'sky' },
   { key: 'wiet',       label: 'Wiet loods',   icon: 'leaf',   tone: 'lime' },
   { key: 'opslag',     label: 'Opslag loods', icon: 'box',    tone: 'warn' },
-  { key: 'gangpot',    label: 'Gangpot',      icon: 'vault',  tone: 'gold', hint: 'aanpassen' },
   { key: 'boss',       label: 'Boss menu',    icon: 'shield', tone: 'violet' }
 ];
-App.ACCESS_DEFAULT = { wiet: true, opslag: false, amfi: false, gangpot: false, boss: false };   // voor nieuwe profielen
+App.ACCESS_DEFAULT = { wiet: true, opslag: false, amfi: false, boss: false };   // voor nieuwe profielen
 
 // Rangen van Varrios Los Aztecas (volgorde = hoog → laag). lead = leiding (goud gevuld weergegeven).
 // icon = naam uit core/icons.js. De Boss kiest per lid een rang in Boss menu → Ledenlijst.
@@ -143,15 +138,10 @@ App.RANKS = [
 App.RANK_MIGRATE = { boss: 'oprichter', underboss: 'kolonel', capo: 'kapitein', veterano: 'veteraan', soldado: 'lid', prospect: 'koerier' };
 
 // Opslag loods: 2 missies per dag. Eén keer afgevinkt = vast (kan niet meer veranderen).
-// reward = wat er automatisch in de gangpot komt (item met die naam, wordt aangemaakt als het niet bestaat)
 App.MISSIONS = [
-  { id: 'basecoke',   label: 'Base coke missie', short: 'Base coke',  icon: 'flask', tone: 'warn',   reward: { item: 'Base', eenheid: 'stuks', amount: 600 } },
-  { id: 'terrorbite', label: 'Terrorbite missie', short: 'Terrorbite', icon: 'flame', tone: 'danger', reward: null }
+  { id: 'basecoke',   label: 'Base coke missie', short: 'Base coke',  icon: 'flask', tone: 'warn' },
+  { id: 'terrorbite', label: 'Terrorbite missie', short: 'Terrorbite', icon: 'flame', tone: 'danger' }
 ];
-App.BASE_ITEM = 'Base';
-
-// Wekelijkse gangpot-bijdrage: te betalen tegen deze weekdag (0 = zondag … 3 = woensdag). De Boss vinkt af wie betaald heeft.
-App.GANGPOT_DUE_DAY = 3;
 
 // Agenda: aanmelden per activiteit (op de site of via de knoppen van de Discord-bot).
 // Bij 'afwezig' is een reden verplicht: één van App.AGENDA.AFWEZIG (bij 'andere' zelf typen).
@@ -214,11 +204,7 @@ App.ERR = {
   ONGELDIG_TYPE: 'Kies een soort.',
   ONGELDIGE_TIJD: 'Geef een geldig uur op (uu:mm).',
   NIET_GEVONDEN: 'Niet (meer) gevonden.',
-  ITEM_BESTAAT_AL: 'Dat item staat al in de gangpot.',
-  TE_WEINIG_IN_POT: 'Er zit niet genoeg in de gangpot om dat eruit te halen.',
-  REDEN_GANGPOT: 'Schrijf erbij wat het is of waarom (minstens 3 tekens) — zo blijft alles na te kijken in de historiek.',
   ONJUISTE_OPSLAGCODE: 'Je hebt geen toegang tot de Opslag loods — vraag de Boss om je aan te vinken.',
-  ONJUISTE_GANGPOTCODE: 'Je mag de gangpot niet aanpassen — vraag de Boss om je aan te vinken.',
   GEEN_BOSS: 'Je hebt geen toegang tot het Boss menu.',
   NIET_INGELOGD: 'Je bent niet (meer) ingelogd — log opnieuw in met Discord.',
   EIGENAAR: 'De eigenaar heeft altijd alle rechten: dat kan je niet wijzigen.',

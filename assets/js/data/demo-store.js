@@ -77,39 +77,29 @@
   }
   const REVIEW = { siebe: 'Oké, laat weten als hij er is.', ivar: 'Geniet ervan, hermano!', matis: 'Beterschap!', yusuf: 'Proficiat aan je neef.' };
 
-  // ---------- boss-data (demo): mededelingen, agenda, gangpot ----------
+  // ---------- boss-data (demo): mededelingen, agenda ----------
   function seedBoss(st) {
     const day = n => U.dkey(U.addDays(new Date(), n));
     const ago = h => iso(Date.now() - h * 3600000);
     st.notices = [
       { id: U.uid(), titel: 'Vergadering morgen is verplicht', tekst: 'Iedereen om 20u in het clubhuis. Kan je niet? Meld het via Afwezigheid.', soort: 'belangrijk', door: 'Boss', created_at: ago(3) },
-      { id: U.uid(), titel: 'Welkom op het nieuwe portaal', tekst: 'Alles van de familia staat nu op één plek: loodsen, gangpot, agenda en afwezigheden.', soort: 'info', door: 'Boss', created_at: ago(30) }
+      { id: U.uid(), titel: 'Welkom op het nieuwe portaal', tekst: 'Alles van de familia staat nu op één plek: loodsen, agenda en afwezigheden.', soort: 'info', door: 'Boss', created_at: ago(30) }
     ];
     st.events = [
       ['Familievergadering', 'vergadering', -3, '20:00', 'Clubhuis Grove Street', 'Terugblik op de week.'],
-      ['Wekelijkse familievergadering', 'vergadering', 1, '20:00', 'Clubhuis Grove Street', 'Verplicht voor iedereen. Agenda: nieuwe afdelingen + verdeling gangpot.'],
-      ['Levering ophalen', 'actie', 3, '22:30', 'Haven — Elysian Island', 'Met 4 man, 2 wagens. Wapens uit de gangpot meenemen.'],
+      ['Wekelijkse familievergadering', 'vergadering', 1, '20:00', 'Clubhuis Grove Street', 'Verplicht voor iedereen. Agenda: nieuwe afdelingen.'],
+      ['Levering ophalen', 'actie', 3, '22:30', 'Haven — Elysian Island', 'Met 4 man, 2 wagens.'],
       ['Verjaardag Ivar', 'feest', 6, '21:00', 'Villa Vinewood Hills', null],
       ['Deal met de Vagos', 'deal', 12, '19:00', 'Parking El Burro Heights', 'Enkel Boss + 2 man.'],
       ['Training schieten', 'andere', 9, '18:00', 'Schietbaan Pillbox Hill', null]
     ].map(([titel, type, d, tijd, plaats, info]) => ({ id: U.uid(), titel, type, datum: day(d), tijd, plaats, info, door: 'Boss', created_at: ago(48) }));
-    const items = [['Cash', '€', 245000], ['Zwart geld', '€', 82500], ['Base', 'stuks', 4200], ['Pistolen', 'stuks', 12], ['Munitie', 'dozen', 40], ['Lockpicks', 'stuks', 25], ['Kevlar vesten', 'stuks', 8]]
-      .map(([naam, eenheid, aantal], i) => ({ id: U.uid(), naam, eenheid, aantal, sort_order: i }));
-    st.gangpot = { items, log: [] };
-    const glog = (it, delta, note, h) => st.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: it.naam, eenheid: it.eenheid, delta, aantal_after: it.aantal, note, door: 'Boss', ts: ago(h) });
-    const it = n => items.find(i => i.naam === n);
-    glog(it('Cash'), 50000, 'Opbrengst deal Ballas', 20);
-    glog(it('Pistolen'), -2, 'Meegegeven aan Kenzo en Dario', 8);
-    glog(it('Zwart geld'), 12500, 'Witwassen via garage', 5);
-    glog(it('Munitie'), 10, 'Bijgekocht', 2);
-    st.gangpot.log.sort((a, b) => new Date(a.ts) - new Date(b.ts));
   }
 
   // ---------- opslag loods: missies (demo) ----------
   function seedMissions(st) {
     const r = rng(11);
     const leden = st.users.filter(u => u.pin && !L.isGangpot(u));
-    st.settings = st.settings || { opslag_code: App.CONFIG.demoOpslagCode, gangpot_code: App.CONFIG.demoGangpotCode };
+    st.settings = st.settings || { opslag_code: App.CONFIG.demoOpslagCode };
     st.missions = [];
     for (let d = 20; d >= 0; d--) {
       App.MISSIONS.forEach((m, mi) => {
@@ -166,32 +156,6 @@
     mk('yusuf', 1, 'wij', 7, 'Liefst vandaag nog als dat lukt 🙏');
   }
 
-  // ---------- wekelijkse gangpot-bijdrage (demo) ----------
-  // een betaalweek wordt aangeduid met de datum van de vervaldag (woensdag) van die week
-  // (eigen kopie van App.gangpotDue — gangpot.js wordt pas na de store geladen)
-  const dueOf = d => U.dkey(U.addDays(U.startOfWeek(d), (App.GANGPOT_DUE_DAY + 6) % 7));
-  function seedPayments(st) {
-    const r = rng(3);
-    st.gangpotPayments = [];
-    const leden = st.users.filter(u => u.pin && !L.isGangpot(u));
-    for (let w = 5; w >= 0; w--) {
-      const due = dueOf(U.addDays(new Date(), -7 * w));
-      leden.forEach(u => {
-        if (r() < (w === 0 ? 0.45 : 0.85)) st.gangpotPayments.push({ id: U.uid(), week: due, user_id: u.id, user_name: u.name, paid_at: iso(U.parseDay(due).getTime() - Math.floor(r() * 2) * 86400000 + 15 * 3600000), door: 'Boss' });
-      });
-    }
-  }
-
-  // zorgt dat het gangpot-item bestaat en boekt er iets op (gedeeld door missies en de opslag loods)
-  function gangpotBook(st, naam, eenheid, delta, note, door) {
-    let it = st.gangpot.items.find(i => i.naam.toLowerCase() === naam.toLowerCase());
-    if (!it) { it = { id: U.uid(), naam, eenheid, aantal: 0, sort_order: st.gangpot.items.length }; st.gangpot.items.push(it); }
-    if (it.aantal + delta < 0) throw E('TE_WEINIG_IN_POT');
-    it.aantal += delta;
-    st.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: it.naam, eenheid: it.eenheid, delta, aantal_after: it.aantal, note, door, ts: iso(Date.now()) });
-    return it;
-  }
-
   // ---------- startdata ----------
   // lege testomgeving: enkel het gangpot-profiel (nog te claimen) en de standaardinstellingen
   function emptyState() {
@@ -200,9 +164,8 @@
       users: [{ id: U.uid(), name: 'gangpot', pin: null, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0, sort_order: 99,
         avatar_url: null, discord_id: null, rank: null, access: { wiet: true, opslag: true, amfi: true }, created_at: now }],
       log: [], customers: [], customerLog: [], baseline: { ...R.BASELINE_DEFAULT, set_at: now },
-      absences: [], notices: [], events: [], rsvps: [], missions: [], tickets: [], ticketSeq: 0, gangpotPayments: [],
-      gangpot: { items: [{ id: U.uid(), naam: App.BASE_ITEM, eenheid: 'stuks', aantal: 0, sort_order: 0 }], log: [] },
-      settings: { opslag_code: App.CONFIG.demoOpslagCode, gangpot_code: App.CONFIG.demoGangpotCode, amfi: JSON.parse(JSON.stringify(AM.DEFAULT)) }
+      absences: [], notices: [], events: [], rsvps: [], missions: [], tickets: [], ticketSeq: 0,
+      settings: { opslag_code: App.CONFIG.demoOpslagCode, amfi: JSON.parse(JSON.stringify(AM.DEFAULT)) }
     };
   }
 
@@ -216,7 +179,7 @@
       legacy_zakjes: 0, sort_order: i, avatar_url: null, discord_id: null, created_at: iso(now - 86400000 * (20 - i))
     }));
     ['oprichter', 'kolonel', 'generaal', 'adviseur', 'kapitein', 'veteraan', 'broeder', null].forEach((r, i) => { users[i].rank = r; });
-    users.forEach((u, i) => { u.access = { wiet: true, opslag: i < 6, amfi: i < 6, boss: i < 2, gangpot: i < 3 }; });
+    users.forEach((u, i) => { u.access = { wiet: true, opslag: i < 6, amfi: i < 6, boss: i < 2 }; });
     users.push({ id: U.uid(), name: 'gangpot', pin: null, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0,
       sort_order: 99, avatar_url: null, discord_id: null, created_at: iso(now - 86400000 * 30) });
     const st = { users, log: [], customers: [], customerLog: [], baseline: { ...R.BASELINE_DEFAULT, set_at: iso(now) } };
@@ -263,7 +226,6 @@
     seedMissions(st);
     seedRsvps(st);
     seedAmfi(st);
-    seedPayments(st);
     st.log.sort((a, b) => new Date(a.ts) - new Date(b.ts));
     st.customerLog.sort((a, b) => new Date(a.ts) - new Date(b.ts));
     return st;
@@ -279,11 +241,9 @@
         // oudere demo-data had nog geen afwezigheden
         if (!state.absences) state.absences = seedAbsences(state.users);
         state.absences.forEach(a => { if (!a.status) Object.assign(a, { status: 'goedgekeurd', reactie: null, beoordeeld_door: null, beoordeeld_at: null }); });
-        if (!state.notices || !state.events || !state.gangpot) seedBoss(state);
-        if (!state.gangpot.items.some(i => i.naam === App.BASE_ITEM)) state.gangpot.items.push({ id: U.uid(), naam: App.BASE_ITEM, eenheid: 'stuks', aantal: 4200, sort_order: 2 });
+        if (!state.notices || !state.events) seedBoss(state);
         if (!state.missions || !state.settings) seedMissions(state);
         if (!state.rsvps) seedRsvps(state);
-        if (!state.gangpotPayments) { if (App.CONFIG.demoData) seedPayments(state); else state.gangpotPayments = []; }
         state.users.forEach(u => {
           if (u.rank === undefined) u.rank = null;
           if (u.rank && App.RANK_MIGRATE[u.rank]) u.rank = App.RANK_MIGRATE[u.rank];
@@ -310,8 +270,6 @@
   const latency = () => U.wait(140 + Math.random() * 160);
   const userById = id => { const u = state.users.find(x => x.id === id); if (!u) throw E('GEBRUIKER_NIET_GEVONDEN'); return u; };
   const klantById = id => { const k = state.customers.find(x => x.id === id); if (!k) throw E('KLANT_NIET_GEVONDEN'); return k; };
-  // gangpot: reden verplicht (zoals _require_reden in supabase/update-v2-gangpot-reden.sql)
-  const needReden = note => { const v = String(note || '').trim().slice(0, 120); if (v.length < 3) throw E('REDEN_GANGPOT'); return v; };
   const posInt = n => { n = Number(n); if (!Number.isInteger(n) || n <= 0) throw E('ONGELDIG_AANTAL'); return n; };
 
   load();
@@ -499,44 +457,8 @@
       if (i < 0) throw E('NIET_GEVONDEN');
       state.events.splice(i, 1); commit();
     },
-    async addGangpotItem({ naam, eenheid, aantal, note }, door) {
-      await latency();
-      naam = String(naam || '').trim().slice(0, 40); eenheid = String(eenheid || '').trim().slice(0, 12) || 'stuks';
-      if (!naam) throw E('ONGELDIGE_NAAM');
-      if (state.gangpot.items.some(i => i.naam.toLowerCase() === naam.toLowerCase())) throw E('ITEM_BESTAAT_AL');
-      aantal = Number(aantal || 0);
-      if (!Number.isFinite(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
-      const reden = aantal > 0 ? needReden(note) : null;
-      const it = { id: U.uid(), naam, eenheid, aantal, sort_order: state.gangpot.items.length };
-      state.gangpot.items.push(it);
-      state.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: naam, eenheid, delta: aantal, aantal_after: aantal, note: reden ? `Nieuw item — ${reden}` : 'Nieuw item', door, ts: iso(Date.now()) });
-      commit();
-    },
-    // delta > 0 = erbij, < 0 = eruit
-    async mutateGangpot(itemId, delta, note, door) {
-      await latency();
-      const it = state.gangpot.items.find(i => i.id === itemId);
-      if (!it) throw E('NIET_GEVONDEN');
-      delta = Number(delta);
-      if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
-      note = needReden(note);
-      if (it.aantal + delta < 0) throw E('TE_WEINIG_IN_POT');
-      it.aantal += delta;
-      state.gangpot.log.push({ id: U.uid(), item_id: it.id, item_naam: it.naam, eenheid: it.eenheid, delta, aantal_after: it.aantal,
-        note, door, ts: iso(Date.now()) });
-      commit();
-    },
-    async deleteGangpotItem(itemId, note) {
-      await latency();
-      const i = state.gangpot.items.findIndex(x => x.id === itemId);
-      if (i < 0) throw E('NIET_GEVONDEN');
-      note = needReden(note);
-      const it = state.gangpot.items[i];
-      state.gangpot.log.push({ id: U.uid(), item_id: null, item_naam: it.naam, eenheid: it.eenheid, delta: -it.aantal, aantal_after: 0, note: `Item verwijderd — ${note}`, door: App.me ? App.me.name : 'onbekend', ts: iso(Date.now()) });
-      state.gangpot.items.splice(i, 1); commit();
-    },
 
-    // ---- opslag loods (fn_complete_mission doet ook de +600 base) ----
+    // ---- opslag loods ----
     async completeMission(type, userId) {
       await latency();
       const m = App.MISSIONS.find(x => x.id === type);
@@ -545,24 +467,6 @@
       const datum = U.dkey(new Date());
       if (state.missions.some(x => x.datum === datum && x.type === type)) throw E('MISSIE_AL_GEDAAN');
       state.missions.push({ id: U.uid(), datum, type, user_id: u.id, user_name: u.name, ts: iso(Date.now()) });
-      if (m.reward) gangpotBook(state, m.reward.item, m.reward.eenheid, m.reward.amount, `${m.label} — ${u.name}`, u.name);
-      commit();
-    },
-    // base erbij/eruit vanuit de opslag loods (bv. verkocht)
-    async mutateBase(delta, note, door) {
-      await latency();
-      delta = Number(delta);
-      if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
-      gangpotBook(state, App.BASE_ITEM, 'stuks', delta, needReden(note), door);
-      commit();
-    },
-    // boss: bijdrage van een lid voor een week (week = datum van de vervaldag) aan/uit vinken
-    async bossSetGangpotPaid(userId, week, paid, door) {
-      await latency();
-      const u = userById(userId);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(week || '')) throw E('ONGELDIGE_DATUM');
-      state.gangpotPayments = state.gangpotPayments.filter(p => !(p.user_id === u.id && p.week === week));
-      if (paid) state.gangpotPayments.push({ id: U.uid(), week, user_id: u.id, user_name: u.name, paid_at: iso(Date.now()), door });
       commit();
     },
 
@@ -710,7 +614,7 @@
         avatar_url: null, discord_id: null, created_at: iso(Date.now()) };
       state.users.push(u); commit(); return u;
     },
-    // toegang aan/uit: 'wiet' | 'opslag' | 'amfi' | 'amfi_staff' (= amfi-medewerker, geeft ook amfi-toegang) | 'gangpot' | 'boss'
+    // toegang aan/uit: 'wiet' | 'opslag' | 'amfi' | 'amfi_staff' (= amfi-medewerker, geeft ook amfi-toegang) | 'boss'
     async bossSetAccess(userId, key, on) {
       await latency();
       const u = userById(userId);

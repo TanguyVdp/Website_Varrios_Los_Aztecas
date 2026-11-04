@@ -1,5 +1,5 @@
 /* Boss menu: enkel voor leden met het vinkje "Boss menu" (Ledenlijst) en de eigenaar. Keuzemenu: Wiet loods-instellingen,
- * mededelingen, agenda, afwezigheden beoordelen, gangpot bijhouden, … */
+ * mededelingen, agenda, afwezigheden beoordelen, … */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, R = App.RULES, L = App.L;
   const ui = { tab: 'overzicht', person: 'all', limit: 30 };
@@ -249,7 +249,7 @@
     return `
       <section class="card flush">
         ${C.cardHead('Ledenlijst', 'users', `<button class="btn violet sm" data-new-profile ${users.length >= R.MAX_USERS ? 'disabled' : ''}>${I('plus', 13)} Profiel aanmaken</button>`)}
-        <p class="muted small card-pad">${users.length}/${R.MAX_USERS} profielen${vrij ? ` · ${vrij} zonder Discord (kunnen niet inloggen)` : ''} · ${I('grip', 12)} sleep om de volgorde te bepalen · vink aan wie toegang heeft. <b>Boss menu</b> geeft ook gangpot en opslag.</p>
+        <p class="muted small card-pad">${users.length}/${R.MAX_USERS} profielen${vrij ? ` · ${vrij} zonder Discord (kunnen niet inloggen)` : ''} · ${I('grip', 12)} sleep om de volgorde te bepalen · vink aan wie toegang heeft. <b>Boss menu</b> geeft ook opslag.</p>
         <div class="table-wrap"><table class="table boss-table leden-table">
           <thead><tr><th></th><th>Lid</th><th>Status</th>${App.ACCESS.map(a => `<th class="center">${a.label}${a.hint ? `<small>${a.hint}</small>` : ''}</th>`).join('')}<th>Discord</th><th></th></tr></thead>
           <tbody id="order-body">${users.map(u => { const gp = L.isGangpot(u); return `<tr data-row="${u.id}">
@@ -257,8 +257,8 @@
             <td><div class="who-cell">${C.avatar(u, 32)}<div class="who-name"><b>${U.esc(u.name)}</b><span>${C.rank(u, true)}</span></div></div></td>
             <td>${u.owner ? `<span class="rpill" style="--accent:var(--gold)">${I('crown', 11)}eigenaar</span>` : gp ? '<span class="dim small">gangpot</span>'
               : u.pin ? `<span class="rpill" style="--accent:var(--lime)">${I('check', 11)}kan inloggen</span>` : `<span class="rpill" style="--accent:var(--warn)">${I('clock', 11)}geen Discord</span>`}</td>
-            ${App.ACCESS.map(a => { const on = App.hasAccess(u, a.key); const via = on && !u.owner && !(u.access || {})[a.key] && (a.key === 'gangpot' || a.key === 'opslag');
-              return `<td class="center">${gp ? (a.key === 'boss' || a.key === 'gangpot' ? '<span class="dim small">—</span>' : '<span class="dim small">altijd</span>')
+            ${App.ACCESS.map(a => { const on = App.hasAccess(u, a.key); const via = on && !u.owner && !(u.access || {})[a.key] && a.key === 'opslag';
+              return `<td class="center">${gp ? (a.key === 'boss' ? '<span class="dim small">—</span>' : '<span class="dim small">altijd</span>')
               : u.owner ? `<span class="chk on locked" style="--accent:var(--${a.tone})" title="Eigenaar: altijd">${I('check', 13)}</span>`
               : via ? `<span class="chk on locked" style="--accent:var(--${a.tone})" title="Via Boss menu">${I('check', 13)}</span>`
               : `<button class="chk ${on ? 'on' : ''}" style="--accent:var(--${a.tone})" data-access="${a.key}" data-uid="${u.id}" title="${a.label}${a.hint ? ' (' + a.hint + ')' : ''}" aria-pressed="${on}">${on ? I('check', 13) : ''}</button>`}</td>`; }).join('')}
@@ -307,7 +307,7 @@
             const discord = $('#np-discord').value.trim();
             if (discord && !/^\d{15,22}$/.test(discord)) throw new Error('ONGELDIG_DISCORD_ID');
             const u = await App.store.bossCreateProfile({ name: $('#np-name').value, rank: f.rank, access: f.access, amfi_staff: f.staff });
-            for (const k of ['gangpot', 'boss']) if (f.access[k]) await App.store.bossSetAccess(u.id, k, true);
+            if (f.access.boss) await App.store.bossSetAccess(u.id, 'boss', true);
             if (discord) await App.store.bossSetDiscord(u.id, discord);
             C.modal.close();
             C.toast(discord ? `Profiel ${U.esc(u.name)} aangemaakt — kan inloggen met Discord` : `Profiel ${U.esc(u.name)} aangemaakt — vul nog het Discord-ID in`);
@@ -404,7 +404,7 @@
       </div>`;
   }
 
-  // wie heeft een recht (vinkje of via Boss menu / eigenaar) — voor de kaarten bij Opslag en Gangpot
+  // wie heeft een recht (vinkje of via Boss menu / eigenaar) — voor de kaart bij Opslag
   function whoHasCard(state, key, title, tone, icon) {
     const leden = state.users.filter(u => !L.isGangpot(u) && App.hasAccess(u, key)).sort((a, b) => a.sort_order - b.sort_order);
     return `
@@ -464,9 +464,6 @@
     { id: 'afwezig', label: 'Afwezigheden', icon: 'userx', tone: 'rose',
       desc: 'Keur afwezigheden goed of af en reageer erop.',
       badge: ({ state }) => { const n = state.absences.filter(a => a.status === 'aangevraagd').length; return n ? { t: `${n} te keuren`, tone: 'warn', hot: true } : { t: 'alles bekeken', tone: 'lime' }; } },
-    { id: 'gangpot', label: 'Gangpot bijhouden', icon: 'vault', tone: 'gold',
-      desc: 'Wekelijkse bijdrage afvinken en bijhouden wat er in de gangpot zit.',
-      badge: ({ state }) => ({ t: `${state.gangpot.items.length} items`, tone: 'gold' }) },
     { id: 'amfi', label: 'Amfi loods', icon: 'flask', tone: 'sky',
       desc: 'Recept per winkel en de prijs per poeder.',
       badge: ({ state }) => { const n = state.tickets.filter(t => t.status === 'wachtrij').length; return { t: `${n} in wachtrij`, tone: n ? 'sky' : 'lime' }; } },
@@ -492,7 +489,6 @@
   }
 
   const tonePill = (t, tone, icon) => `<span class="rpill" style="--accent:var(--${tone})">${icon ? I(icon, 12) : ''}${t}</span>`;
-  App.boss.fmtItem = (it, n = it.aantal) => it.eenheid === '€' ? `€ ${U.num(n)}` : `${U.num(n)} <small>${U.esc(it.eenheid)}</small>`;
 
   function hub(ctx) {
     return `
@@ -639,155 +635,6 @@
     });
   }
 
-  // ---- gangpot bijhouden ----
-  // bewerkbaar raster van de gangpot — ook gebruikt op de pagina Gangpot (met de gangpot-code)
-  App.gangpotEditGrid = items => `
-        <div class="gp-grid">${items.map(it => `
-          <div class="gp-item">
-            <div class="gp-top"><span>${U.esc(it.naam)}</span><button class="abs-del" data-gp-del="${it.id}" title="Item verwijderen">${I('trash', 13)}</button></div>
-            <b class="mono">${App.boss.fmtItem(it)}</b>
-            <div class="gp-btns">
-              <button class="btn ghost" data-gp-mut="${it.id}" data-dir="-1">${I('minus', 14)} Eruit</button>
-              <button class="btn ghost" data-gp-mut="${it.id}" data-dir="1">${I('plus', 14)} Erbij</button>
-            </div>
-          </div>`).join('') || C.empty('Nog niets in de gangpot.', 'vault')}</div>`;
-
-  // wie de wijziging deed: de Boss, of het ingelogde lid met het vinkje "Gangpot aanpassen"
-  const gpWho = ctx => unlocked() ? App.boss.who(ctx) : (ctx.me ? ctx.me.name : 'Gangpot');
-
-  App.bindGangpotEdit = (root, ctx) => {
-    root.querySelectorAll('[data-gp-new]').forEach(b => b.addEventListener('click', () => gpNewModal(ctx)));
-    root.querySelectorAll('[data-gp-mut]').forEach(b => b.addEventListener('click', () => {
-      const it = ctx.state.gangpot.items.find(x => x.id === b.dataset.gpMut);
-      if (it) gpMutModal(it, Number(b.dataset.dir), ctx);
-    }));
-    root.querySelectorAll('[data-gp-del]').forEach(b => b.addEventListener('click', () => {
-      const it = ctx.state.gangpot.items.find(x => x.id === b.dataset.gpDel);
-      if (it) gpDelModal(it);
-    }));
-  };
-
-  // item verwijderen: reden verplicht, komt in de historiek (met wat er nog in zat)
-  function gpDelModal(it) {
-    C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--danger)">${I('trash', 18)}</span>
-        <div><h3>${U.esc(it.naam)} verwijderen?</h3><p class="muted small">Nu in de pot: ${App.boss.fmtItem(it)}. Dit komt in de historiek.</p></div></div>
-      <form class="stack" id="gd-form" autocomplete="off">
-        <label class="field"><span>Waarom verwijder je dit <em>(verplicht)</em></span><input class="input" id="gd-note" maxlength="120" required minlength="3" placeholder="bv. dubbel aangemaakt / alles verkocht"></label>
-        <div class="err" id="gd-err"></div>
-        <div class="row-2"><button type="button" class="btn ghost" data-modal-close>Annuleren</button><button class="btn danger" type="submit">${I('trash', 14)} Verwijderen</button></div>
-      </form>`, modal => {
-      const form = modal.querySelector('#gd-form');
-      form.addEventListener('submit', e => {
-        e.preventDefault();
-        C.busy(form.querySelector('button[type=submit]'), async () => {
-          try { await App.store.deleteGangpotItem(it.id, modal.querySelector('#gd-note').value); C.modal.close(); C.toast('Item verwijderd'); }
-          catch (ex) { modal.querySelector('#gd-err').textContent = U.friendlyError(ex); }
-        });
-      });
-    });
-  }
-
-  // wekelijkse bijdrage afvinken (week = vervaldag; pijltjes = vorige/volgende week)
-  const payUi = { offset: 0 };
-  function payCard(state) {
-    const week = App.gangpotDue(U.addDays(new Date(), 7 * payUi.offset));
-    const leden = App.gangpotMembers(state);
-    const betaald = leden.filter(u => App.gangpotPaid(state, u.id, week)).length;
-    return `
-      <section class="card">
-        ${C.cardHead('Wekelijkse bijdrage', 'users', `
-          <div class="ag-nav">
-            <button class="cal-nav" data-payweek="-1" aria-label="Vorige week">${I('back', 15)}</button>
-            <span class="pay-weeklabel">${payUi.offset === 0 ? 'Deze week' : payUi.offset === -1 ? 'Vorige week' : payUi.offset === 1 ? 'Volgende week' : 'Week van'} · <b>${App.gangpotDueLabel(week)}</b></span>
-            <button class="cal-nav" data-payweek="1" aria-label="Volgende week" ${payUi.offset >= 1 ? 'disabled' : ''}>${I('arrowRight', 15)}</button>
-          </div>`)}
-        <p class="muted small">Vink aan wie de gangpot betaald heeft. Te betalen tegen woensdag — wie dan nog niet aangevinkt is, staat op <b class="danger">te laat</b>. <b class="mono">${betaald}/${leden.length}</b> betaald.</p>
-        <div class="staff-list pay-checks">${leden.map(u => { const p = App.gangpotPaid(state, u.id, week); return `
-          <button class="staff-row ${p ? 'on paid' : ''}" data-pay="${u.id}" data-week="${week}" aria-pressed="${!!p}">
-            <span class="chk ${p ? 'on' : ''}" style="--accent:var(--lime)">${p ? I('check', 13) : ''}</span>${C.avatar(u, 26)}<b class="tcap">${U.esc(u.name)}</b>
-            <span class="muted small">${p ? `betaald ${U.date(p.paid_at)}` : ''}</span>
-          </button>`; }).join('') || C.empty('Nog geen leden.', 'users')}</div>
-        ${leden.length && betaald < leden.length ? `<button class="btn ghost sm" data-pay-all="${week}" style="margin-top:10px">${I('check', 13)} Iedereen op betaald zetten</button>` : ''}
-      </section>`;
-  }
-
-  function sGangpot({ state }) {
-    const items = [...state.gangpot.items].sort((a, b) => a.sort_order - b.sort_order);
-    const log = [...state.gangpot.log].sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 12);
-    return `
-      ${whoHasCard(state, 'gangpot', 'Wie mag de gangpot aanpassen', 'gold', 'users')}
-      ${payCard(state)}
-      <section class="card">
-        ${C.cardHead('Wat zit er in de gangpot', 'vault', `<button class="btn gold" data-gp-new>${I('plus', 14)} Item toevoegen</button>`)}
-        ${App.gangpotEditGrid(items)}
-      </section>
-      <section class="card">
-        ${C.cardHead('Laatste wijzigingen', 'list', `<a class="link-more gold" href="#/gangpot">Gangpot ${I('arrowRight', 13)}</a>`)}
-        <div class="feed">${log.map(App.gangpotFeedItem).join('') || C.empty('Nog geen wijzigingen.')}</div>
-      </section>`;
-  }
-
-  App.gangpotFeedItem = e => C.feedItem({
-    tone: e.delta > 0 ? 'lime' : 'warn', icon: e.delta > 0 ? 'plus' : 'minus', ts: e.ts,
-    delta: `${e.delta > 0 ? '+' : '−'}${e.eenheid === '€' ? '€' : ''}${U.num(Math.abs(e.delta))}`,
-    html: `<b>${U.esc(e.item_naam)}</b> ${e.delta > 0 ? 'erbij' : 'eruit'}${e.note ? ` — ${U.esc(e.note)}` : ''}`,
-    sub: `nu ${e.eenheid === '€' ? '€ ' + U.num(e.aantal_after) : U.num(e.aantal_after) + ' ' + U.esc(e.eenheid)} · door ${U.esc(e.door)}`
-  });
-
-  function gpMutModal(it, dir, ctx) {
-    C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--${dir > 0 ? 'lime' : 'warn'})">${I(dir > 0 ? 'plus' : 'minus', 18)}</span>
-        <div><h3>${U.esc(it.naam)} ${dir > 0 ? 'erbij' : 'eruit'}</h3><p class="muted small">Nu in de pot: ${App.boss.fmtItem(it)}</p></div></div>
-      <form class="stack" id="gm-form" autocomplete="off">
-        <label class="field"><span>Hoeveel ${it.eenheid === '€' ? '(€)' : `(${U.esc(it.eenheid)})`}</span><input class="input lg mono" id="gm-n" type="number" min="1" step="1" inputmode="numeric" placeholder="0"></label>
-        <label class="field"><span>${dir > 0 ? 'Wat is dit / waar komt het vandaan' : 'Waarom gaat het eruit'} <em>(verplicht)</em></span><input class="input" id="gm-note" maxlength="120" required minlength="3" placeholder="${dir > 0 ? 'bv. opbrengst deal met de Ballas' : 'bv. meegegeven aan Kenzo voor de overval'}">
-          <small class="dim">Komt in de historiek, met jouw naam erbij.</small></label>
-        <div class="err" id="gm-err"></div>
-        <button class="btn ${dir > 0 ? 'primary' : 'warn'} block" type="submit">${dir > 0 ? 'Toevoegen' : 'Eruit halen'}</button>
-      </form>`, modal => {
-      const form = modal.querySelector('#gm-form');
-      form.addEventListener('submit', e => {
-        e.preventDefault();
-        C.busy(form.querySelector('button[type=submit]'), async () => {
-          try {
-            const n = Number(modal.querySelector('#gm-n').value);
-            if (!(n > 0)) throw new Error('ONGELDIG_AANTAL');
-            await App.store.mutateGangpot(it.id, dir * n, modal.querySelector('#gm-note').value, gpWho(ctx));
-            C.modal.close(); C.toast('Gangpot bijgewerkt');
-          } catch (ex) { modal.querySelector('#gm-err').textContent = U.friendlyError(ex); }
-        });
-      });
-    });
-  }
-
-  function gpNewModal(ctx) {
-    C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--gold)">${I('vault', 18)}</span><div><h3>Item toevoegen</h3><p class="muted small">Bv. Cash, Wapens, Munitie, Drugs ...</p></div></div>
-      <form class="stack" id="gn-form" autocomplete="off">
-        <label class="field"><span>Naam</span><input class="input" id="gn-naam" maxlength="40" placeholder="bv. Shotguns"></label>
-        <div class="row-2">
-          <label class="field"><span>Eenheid</span><input class="input" id="gn-eenheid" maxlength="12" placeholder="stuks / € / dozen" list="gn-units"></label>
-          <label class="field"><span>Nu in de pot</span><input class="input mono" id="gn-aantal" type="number" min="0" step="1" value="0"></label>
-        </div>
-        <datalist id="gn-units"><option value="stuks"><option value="€"><option value="dozen"><option value="zakjes"><option value="kg"></datalist>
-        <label class="field"><span>Wat is dit / waar komt het vandaan <em>(verplicht als er al iets in zit)</em></span><input class="input" id="gn-note" maxlength="120" placeholder="bv. buit van de bankoverval"></label>
-        <div class="err" id="gn-err"></div>
-        <button class="btn gold block" type="submit">Toevoegen</button>
-      </form>`, modal => {
-      const form = modal.querySelector('#gn-form');
-      form.addEventListener('submit', e => {
-        e.preventDefault();
-        C.busy(form.querySelector('button[type=submit]'), async () => {
-          try {
-            await App.store.addGangpotItem({ naam: modal.querySelector('#gn-naam').value, eenheid: modal.querySelector('#gn-eenheid').value, aantal: modal.querySelector('#gn-aantal').value, note: modal.querySelector('#gn-note').value }, gpWho(ctx));
-            C.modal.close(); C.toast('Item toegevoegd');
-          } catch (ex) { modal.querySelector('#gn-err').textContent = U.friendlyError(ex); }
-        });
-      });
-    });
-  }
-
   function confirmModal(title, text, label, fn) {
     C.modal.open(`
       <h3>${title}</h3><p class="muted">${text}</p><div class="err" id="cf-err"></div>
@@ -810,7 +657,7 @@
           <div class="page-tools">${C.seg('tab', [{ value: 'overzicht', label: 'Overzicht', icon: 'users' }, { value: 'klanten', label: 'Klanten', icon: 'user' }, { value: 'wachtrij', label: 'Wachtrij', icon: 'clock' }, { value: 'logboek', label: 'Logboek', icon: 'list' }], ui.tab)}</div>
           ${tabs[ui.tab](ctx)}`;
       }
-      const body = { leden: sLeden, mededeling: sMededeling, agenda: sAgenda, afwezig: sAfwezig, gangpot: sGangpot, opslag: sOpslag, amfi: sAmfi, website: sWebsite }[s.id];
+      const body = { leden: sLeden, mededeling: sMededeling, agenda: sAgenda, afwezig: sAfwezig, opslag: sOpslag, amfi: sAmfi, website: sWebsite }[s.id];
       return secHead(s) + body(ctx);
     },
     mount(ctx, root) {
@@ -969,21 +816,6 @@
         }));
       }
 
-      if (sec === 'gangpot') {
-        App.bindGangpotEdit(root, ctx);
-        root.querySelectorAll('[data-payweek]').forEach(b => b.addEventListener('click', () => { payUi.offset = Math.min(1, payUi.offset + Number(b.dataset.payweek)); App.rerender(); }));
-        root.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => {
-          const u = ctx.state.users.find(x => x.id === b.dataset.pay); if (!u) return;
-          const paid = !App.gangpotPaid(ctx.state, u.id, b.dataset.week);
-          C.busy(b, async () => { await App.store.bossSetGangpotPaid(u.id, b.dataset.week, paid, who); C.toast(`${U.esc(u.name)}: ${paid ? 'betaald' : 'niet betaald'}`); });
-        }));
-        root.querySelector('[data-pay-all]')?.addEventListener('click', e => C.busy(e.currentTarget, async () => {
-          const week = e.currentTarget.dataset.payAll;
-          for (const u of App.gangpotMembers(ctx.state)) if (!App.gangpotPaid(ctx.state, u.id, week)) await App.store.bossSetGangpotPaid(u.id, week, true, who);
-          C.toast('Iedereen op betaald gezet');
-        }));
-      }
-
     }
   };
-})(window.App);
+})(window.App);

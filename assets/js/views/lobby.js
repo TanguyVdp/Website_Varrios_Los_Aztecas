@@ -15,9 +15,10 @@
     ],
     opslag: ({ state }) => {
       const n = App.missionsToday(state).filter(x => x.done).length;
+      const from = U.dkey(U.addDays(new Date(), -6));
       return [
         { v: `${n}/${App.MISSIONS.length}`, l: 'missies vandaag' },
-        { v: U.num(App.baseItem(state).aantal), l: 'base in de pot' }
+        { v: `${state.missions.filter(x => x.datum >= from).length}/${7 * App.MISSIONS.length}`, l: 'laatste 7 dagen' }
       ];
     },
     afwezigheid: ({ state }) => {
@@ -25,13 +26,6 @@
       return [
         { v: U.num(i.now.length), l: 'nu afwezig' },
         { v: U.num(i.week.length), l: 'komende 7 dagen' }
-      ];
-    },
-    gangpot: ({ snap, state }) => {
-      const gp = state.users.find(L.isGangpot);
-      return [
-        { v: '€ ' + U.num(App.gangpotCash(state)), l: 'cash' },
-        ...(gp ? [{ v: U.num(snap.perUser.get(gp.id).tegoed), l: 'zakjes wiet' }] : [])
       ];
     },
     agenda: ({ state }) => {
@@ -77,14 +71,6 @@
         <span class="me-ic">${I('leaf', 13)}</span>
         <span><b class="mono">${U.num(mine.tegoed)}</b> zakjes tegoed<span class="me-dim"> · <b class="mono">${U.num(mine.momTegoed)}</b> klaar om op te halen</span></span>
       </a>`] : [];
-    if (!App.L.isGangpot(me)) {
-      const st = App.gangpotStatus(state, me.id);
-      if (st.key !== 'betaald') chips.push(`
-      <a class="me-chip" href="#/gangpot" style="--accent:var(--${st.key === 'laat' ? 'danger' : 'gold'})">
-        <span class="me-ic">${I('crown', 13)}</span>
-        <span>Gangpot-bijdrage<span class="me-dim"> · ${st.key === 'laat' ? 'te laat — nog niet betaald' : `nog te betalen tegen ${App.gangpotDueLabel(App.gangpotDue(new Date())).split(' ')[0]}`}</span></span>
-      </a>`);
-    }
     const own = state.tickets.find(t => t.user_id === me.id && AM.OPEN(t.status));
     if (own) {
       const n = AM.unread(own, me.id), pos = AM.position(state.tickets, own);
@@ -136,7 +122,6 @@
 
   function hero(ctx) {
     const { me, snap, state } = ctx;
-    const gp = state.users.find(L.isGangpot);
     const leden = state.users.filter(u => !L.isGangpot(u)).length;
     const q = snap.queueInfo;
     const now = new Date();
@@ -167,11 +152,11 @@
           <div class="lh-ring"></div>
           <img src="assets/img/logo-mark.png" alt="">
         </div>
-        <div class="lh-stats">
+        <div class="lh-stats ${App.can('opslag') ? '' : 'three'}">
           ${nextEventStat(ctx)}
           ${stat('gold', 'users', 'Familia', `${leden}<small>/${R.MAX_USERS}</small>`, 'actieve leden')}
-          ${stat('gold', 'crown', 'Gangpot', '€ ' + U.num(App.gangpotCash(state)), 'cash in de pot')}
-          ${!App.can('opslag') ? stat('rose', 'userx', 'Afwezig', U.num(App.absInfo(state).now.length), 'leden nu afwezig') : `<div class="lh-stat mis-sum" style="--accent:var(--warn)">
+          ${stat('rose', 'userx', 'Afwezig', U.num(App.absInfo(state).now.length), 'leden nu afwezig')}
+          ${!App.can('opslag') ? '' : `<div class="lh-stat mis-sum" style="--accent:var(--warn)">
             <span class="lh-stat-ic">${I('box', 15)}</span>
             <div>
               <span class="lh-stat-label">Missies vandaag</span>
@@ -223,4 +208,4 @@
         <footer class="lobby-foot"><img src="assets/img/logo-mark.png" alt=""><span>Varrios Los Aztecas · familia primero</span></footer>`;
     }
   };
-})(window.App);
+})(window.App);

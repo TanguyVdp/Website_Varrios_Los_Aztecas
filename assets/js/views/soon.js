@@ -1,23 +1,9 @@
 /* Pagina voor een afdeling die nog in opbouw is: wat ze wordt en wat ze zal kunnen. */
 (function (App) {
-  const U = App.U, C = App.C, I = App.icon, L = App.L, R = App.RULES;
+  const U = App.U, C = App.C, I = App.icon;
 
-  // extra uitleg per afdeling: wat er vandaag al bestaat
-  const NOW = {
-    gangpot: ({ snap, state }) => {
-      const gp = state.users.find(L.isGangpot);
-      if (!gp) return '';
-      return `
-        <section class="card soon-now" style="--accent:var(--gold)">
-          ${C.avatar(gp, 48)}
-          <div>
-            <b>Vandaag al actief via de Wiet loods</b>
-            <p class="muted small">Het profiel <b>gangpot</b> krijgt automatisch 1 op ${R.GANGPOT_DEEL} van elke inleg. Nu in de pot:</p>
-          </div>
-          <div class="soon-now-fig"><b class="mono">${U.num(snap.perUser.get(gp.id).tegoed)}</b><span>zakjes tegoed</span></div>
-        </section>`;
-    }
-  };
+  // extra uitleg per afdeling: wat er vandaag al bestaat (bv. NOW.<afdeling-id> = ctx => html)
+  const NOW = {};
 
   App.views.soon = {
     title: ctx => ctx.module.name,

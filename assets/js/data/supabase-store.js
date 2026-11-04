@@ -22,9 +22,9 @@
   };
   // status: 'anon' (niet ingelogd) | 'unlinked' (Discord niet gekoppeld aan een profiel) | 'member'
   const auth = { status: 'anon', userId: null, discordId: null, discordName: null, error: null };
-  // de rechten (Boss, gangpot, opslag) controleert de database zelf aan de hand van wie ingelogd is;
+  // de rechten (Boss, opslag) controleert de database zelf aan de hand van wie ingelogd is;
   // de oude code-parameters van de functies blijven bestaan maar zijn leeg
-  const needBoss = () => null, bossHash = () => null, gangpotHash = () => null, opslagHash = () => null;
+  const needBoss = () => null, bossHash = () => null, opslagHash = () => null;
 
   // fout van Postgres ("ONJUISTE_BOSSCODE" uit raise exception) → zelfde codes als de demo-store
   function errCode(error) {
@@ -59,7 +59,7 @@
     total_ingelegd: u.total_ingelegd || 0, opgehaald: u.opgehaald || 0, legacy_zakjes: u.legacy_zakjes || 0,
     sort_order: u.sort_order == null ? 999 : u.sort_order, avatar_url: u.avatar_url, discord_id: u.discord_id, created_at: u.created_at,
     rank: u.rank || null, amfi_staff: !!u.amfi_staff, owner: !!u.is_owner,
-    access: { wiet: u.access_wiet !== false, opslag: !!u.access_opslag, amfi: !!u.access_amfi, gangpot: !!u.perm_gangpot, boss: !!u.perm_boss }
+    access: { wiet: u.access_wiet !== false, opslag: !!u.access_opslag, amfi: !!u.access_amfi, boss: !!u.perm_boss }
   });
 
   // ruwe tabellen; state wordt daaruit opgebouwd
@@ -79,9 +79,6 @@
     notices:   () => all('notices', 'created_at', false),
     events:    () => all('events', 'datum'),
     rsvps:     () => all('event_rsvps', 'ts'),
-    gpItems:   () => all('gangpot_items', 'sort_order'),
-    gpLog:     () => all('gangpot_log', 'ts'),
-    payments:  () => all('gangpot_payments', 'paid_at'),
     missions:  () => all('missions', 'ts'),
     tickets:   () => all('amfi_tickets', 'created_at'),
     messages:  () => all('amfi_messages', 'ts')
@@ -90,7 +87,7 @@
   const TABLES = {
     loods_log: ['log', 'users'], customers: ['customers'], customer_log: ['customerLog', 'customers'], loods_baseline: ['baseline'],
     portal_settings: ['settings'], absences: ['absences'], notices: ['notices'], events: ['events', 'rsvps'], event_rsvps: ['rsvps'],
-    gangpot_items: ['gpItems'], gangpot_log: ['gpLog'], gangpot_payments: ['payments'], missions: ['missions'],
+    missions: ['missions'],
     amfi_tickets: ['tickets'], amfi_messages: ['messages']
   };
 
@@ -114,17 +111,11 @@
       notices: raw.notices || [],
       events: raw.events || [],
       rsvps: raw.rsvps || [],
-      gangpot: {
-        items: (raw.gpItems || []).map(i => ({ ...i, aantal: Number(i.aantal) })),
-        log: (raw.gpLog || []).map(l => ({ ...l, delta: Number(l.delta), aantal_after: Number(l.aantal_after) }))
-      },
-      gangpotPayments: raw.payments || [],
       missions: raw.missions || [],
       tickets: (raw.tickets || []).map(t => ({ ...t, read: t.read || {}, messages: msgs.get(t.id) || [] })),
       settings: {
         // geen echte codes: enkel een versie, zodat een gewijzigde code iedereen terug op slot zet
         opslag_code: 'v' + (ps.opslag_v || 1),
-        gangpot_code: 'v' + (ps.gangpot_v || 1),
         amfi: ps.amfi && ps.amfi.winkels ? ps.amfi : JSON.parse(JSON.stringify(AM.DEFAULT)),
         site_onderhoud: ps.site_onderhoud !== false
       }
@@ -338,39 +329,10 @@
       await after(['events', 'rsvps']);
     },
 
-    // ---- gangpot (gangpot-code of bosscode) ----
-    async addGangpotItem({ naam, eenheid, aantal, note }, door) {
-      aantal = Number(aantal || 0);
-      if (!Number.isFinite(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
-      await rpc('fn_gangpot_add_item', { p_naam: naam || '', p_eenheid: eenheid || '', p_aantal: aantal, p_door: door, p_code_hash: gangpotHash(), p_note: note || null });
-      await after(['gpItems', 'gpLog']);
-    },
-    async mutateGangpot(itemId, delta, note, door) {
-      delta = Number(delta);
-      if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
-      await rpc('fn_gangpot_mutate', { p_item_id: itemId, p_delta: delta, p_note: note || null, p_door: door, p_code_hash: gangpotHash() });
-      await after(['gpItems', 'gpLog']);
-    },
-    async deleteGangpotItem(itemId, note) {
-      await rpc('fn_gangpot_delete_item', { p_item_id: itemId, p_code_hash: gangpotHash(), p_note: note || null });
-      await after(['gpItems', 'gpLog']);
-    },
-    async bossSetGangpotPaid(userId, week, paid, door) {
-      if (!DAY.test(week || '')) throw E('ONGELDIGE_DATUM');
-      await rpc('fn_boss_set_gangpot_paid', { p_user_id: userId, p_week: week, p_paid: !!paid, p_door: door, p_boss_pin_hash: needBoss() });
-      await after(['payments']);
-    },
-
     // ---- opslag loods (vinkje opslag of Boss) ----
     async completeMission(type, userId) {
       await rpc('fn_complete_mission', { p_type: type, p_user_id: userId, p_code_hash: opslagHash() });
-      await after(['missions', 'gpItems', 'gpLog']);
-    },
-    async mutateBase(delta, note, door) {
-      delta = Number(delta);
-      if (!Number.isFinite(delta) || delta === 0) throw E('ONGELDIG_AANTAL');
-      await rpc('fn_mutate_base', { p_delta: delta, p_note: note || null, p_door: door, p_code_hash: opslagHash() });
-      await after(['gpItems', 'gpLog']);
+      await after(['missions']);
     },
 
     // ---- amfi loods ----
@@ -442,7 +404,7 @@
     async bossDeleteProfile(userId) {
       if (L.isGangpot(userById(userId))) throw E('GANGPOT_PROFIEL');
       await rpc('fn_delete_profile', { p_user_id: userId, p_boss_pin_hash: needBoss() });
-      await after(['users', 'absences', 'rsvps', 'payments', 'tickets']);
+      await after(['users', 'absences', 'rsvps', 'tickets']);
     },
     async bossSetDiscord(userId, discordId) {
       await rpc('fn_boss_set_discord_id', { p_user_id: userId, p_discord_id: String(discordId || '').trim() || null, p_boss_pin_hash: needBoss() });

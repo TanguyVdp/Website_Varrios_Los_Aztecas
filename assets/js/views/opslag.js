@@ -1,6 +1,5 @@
 /* Opslag loods: enkel met het vinkje "Opslag loods" (of Boss menu) in de Ledenlijst — app.js toont anders "Geen toegang".
- * Elke dag 2 missies (App.MISSIONS) die elk maar één keer per dag afgevinkt kunnen worden — daarna staan ze vast.
- * Base coke = automatisch +600 base in de gangpot; de voorraad base kan hier ook bijgeteld of verminderd worden (bv. verkocht). */
+ * Elke dag 2 missies (App.MISSIONS) die elk maar één keer per dag afgevinkt kunnen worden — daarna staan ze vast. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, M = App.MISSIONS;
 
@@ -13,7 +12,6 @@
     const t = U.dkey(new Date());
     return M.map(m => ({ m, done: state.missions.find(x => x.datum === t && x.type === m.id) || null }));
   };
-  App.baseItem = state => state.gangpot.items.find(i => i.naam === App.BASE_ITEM) || { naam: App.BASE_ITEM, eenheid: 'stuks', aantal: 0 };
 
   function missionCard({ m, done }) {
     return `
@@ -21,7 +19,7 @@
         <span class="mis-check">${done ? I('check', 30) : ''}</span>
         <div class="mis-body">
           <div class="abs-top"><span class="mis-ic">${I(m.icon, 15)}</span><b>${m.label}</b></div>
-          ${m.reward ? `<p class="mis-reward">${I('crown', 12)} +${U.num(m.reward.amount)} ${m.reward.item.toLowerCase()} in de gangpot</p>` : '<p class="mis-reward muted">1× per dag</p>'}
+          <p class="mis-reward muted">1× per dag</p>
           ${done
             ? `<p class="mis-by">${I('lock', 12)} Gedaan door <b class="tcap">${U.esc(done.user_name)}</b> om ${U.clock(done.ts)} — staat vast</p>`
             : `<button class="btn mis-btn" data-done="${m.id}">${I('check', 15)} Ik heb hem gedaan</button>`}
@@ -84,56 +82,15 @@
       </section>`;
   }
 
-  function baseCard(state) {
-    const it = App.baseItem(state);
-    const log = state.gangpot.log.filter(e => e.item_naam === App.BASE_ITEM).sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 5);
-    return `
-      <section class="card base-card">
-        ${C.cardHead('Base in de gangpot', 'flask', `<a class="link-more gold" href="#/gangpot">Gangpot ${I('arrowRight', 13)}</a>`)}
-        <div class="base-fig"><b class="mono">${U.num(it.aantal)}</b><span>base</span></div>
-        <div class="gp-btns">
-          <button class="btn ghost" data-base="-1">${I('minus', 14)} Eruit (verkocht ...)</button>
-          <button class="btn ghost" data-base="1">${I('plus', 14)} Extra erbij</button>
-        </div>
-        <div class="feed compact">${log.map(App.gangpotFeedItem).join('') || C.empty('Nog geen wijzigingen.')}</div>
-      </section>`;
-  }
-
-  function baseModal(dir, ctx) {
-    const it = App.baseItem(ctx.state);
-    C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--${dir > 0 ? 'lime' : 'warn'})">${I(dir > 0 ? 'plus' : 'minus', 18)}</span>
-        <div><h3>Base ${dir > 0 ? 'erbij' : 'eruit'}</h3><p class="muted small">Nu in de gangpot: <b class="mono">${U.num(it.aantal)}</b> base</p></div></div>
-      <form class="stack" id="bm-form" autocomplete="off">
-        <label class="field"><span>Hoeveel base</span><input class="input lg mono" id="bm-n" type="number" min="1" step="1" placeholder="0"></label>
-        <label class="field"><span>Waarom <em>(verplicht)</em></span><input class="input" id="bm-note" maxlength="120" required minlength="3" placeholder="${dir > 0 ? 'bv. extra gekregen' : 'bv. verkocht aan Ballas'}"></label>
-        <div class="err" id="bm-err"></div>
-        <button class="btn ${dir > 0 ? 'primary' : 'warn'} block" type="submit">${dir > 0 ? 'Toevoegen' : 'Eruit halen'}</button>
-      </form>`, modal => {
-      const form = modal.querySelector('#bm-form');
-      form.addEventListener('submit', e => {
-        e.preventDefault();
-        C.busy(form.querySelector('button[type=submit]'), async () => {
-          try {
-            const n = Number(modal.querySelector('#bm-n').value);
-            if (!(n > 0)) throw new Error('ONGELDIG_AANTAL');
-            await App.store.mutateBase(dir * n, modal.querySelector('#bm-note').value, ctx.me.name);
-            C.modal.close(); C.toast('Base bijgewerkt');
-          } catch (ex) { modal.querySelector('#bm-err').textContent = U.friendlyError(ex); }
-        });
-      });
-    });
-  }
-
   function confirmDone(m, ctx) {
     C.modal.open(`
       <div class="af-head"><span class="af-ic" style="--accent:var(--${m.tone})">${I(m.icon, 18)}</span><div><h3>${m.label} afvinken?</h3><p class="muted small">${U.dayLabel(U.dkey(new Date()))}</p></div></div>
-      <p class="muted">Je bevestigt dat <b class="tcap">${U.esc(ctx.me.name)}</b> vandaag de ${m.label.toLowerCase()} gedaan heeft.${m.reward ? ` Er komt automatisch <b>+${U.num(m.reward.amount)} ${m.reward.item.toLowerCase()}</b> in de gangpot.` : ''}</p>
+      <p class="muted">Je bevestigt dat <b class="tcap">${U.esc(ctx.me.name)}</b> vandaag de ${m.label.toLowerCase()} gedaan heeft.</p>
       <div class="abs-me">${I('lock', 14)} Dit kan daarna niet meer veranderd worden.</div>
       <div class="err" id="cd-err"></div>
       <div class="row-2"><button class="btn ghost" data-modal-close>Annuleren</button><button class="btn warn" id="cd-ok">${I('check', 15)} Ja, gedaan</button></div>`, modal => {
       modal.querySelector('#cd-ok').addEventListener('click', e => C.busy(e.currentTarget, async () => {
-        try { await App.store.completeMission(m.id, ctx.me.id); C.modal.close(); C.toast(`${m.label} afgevinkt${m.reward ? ` — +${m.reward.amount} ${m.reward.item.toLowerCase()} in de gangpot` : ''}`); }
+        try { await App.store.completeMission(m.id, ctx.me.id); C.modal.close(); C.toast(`${m.label} afgevinkt`); }
         catch (ex) { modal.querySelector('#cd-err').textContent = U.friendlyError(ex); }
       }));
     });
@@ -155,18 +112,17 @@
           </div>
         </section>
         <div class="mis-grid">${today.map(missionCard).join('')}</div>
-        <div class="grid-2">${weekGrid(state)}${baseCard(state)}</div>
+        ${weekGrid(state)}
         <div class="grid-2">
           ${ranking(state)}
           <section class="card">
             ${C.cardHead('Laatst gedaan', 'list')}
-            <div class="feed">${hist.map(x => { const m = M.find(y => y.id === x.type) || M[0]; return C.feedItem({ tone: 'lime', icon: 'check', ts: x.ts, delta: m.reward ? `+${m.reward.amount}` : '✓', html: `<b>${U.esc(x.user_name)}</b> deed de ${m.label.toLowerCase()}`, sub: U.dayLabel(x.datum) }); }).join('') || C.empty('Nog niets gedaan.')}</div>
+            <div class="feed">${hist.map(x => { const m = M.find(y => y.id === x.type) || M[0]; return C.feedItem({ tone: 'lime', icon: 'check', ts: x.ts, delta: '✓', html: `<b>${U.esc(x.user_name)}</b> deed de ${m.label.toLowerCase()}`, sub: U.dayLabel(x.datum) }); }).join('') || C.empty('Nog niets gedaan.')}</div>
           </section>
         </div>`;
     },
     mount(ctx, root) {
       root.querySelectorAll('[data-done]').forEach(b => b.addEventListener('click', () => confirmDone(M.find(m => m.id === b.dataset.done), ctx)));
-      root.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => baseModal(Number(b.dataset.base), ctx)));
     }
   };
-})(window.App);
+})(window.App);
