@@ -119,7 +119,8 @@
       settings: {
         // geen echte codes: enkel een versie, zodat een gewijzigde code iedereen terug op slot zet
         opslag_code: 'v' + (ps.opslag_v || 1),
-        amfi: AM.settings(ps.amfi && ps.amfi.winkels ? ps.amfi : JSON.parse(JSON.stringify(AM.DEFAULT))),
+        // ontbrekende winkels/ruil → standaardwaarden (de ruil uit de database blijft behouden)
+        amfi: AM.settings(ps.amfi || {}),
         site_onderhoud: ps.site_onderhoud !== false
       }
     };
