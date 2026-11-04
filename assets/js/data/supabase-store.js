@@ -81,14 +81,16 @@
     rsvps:     () => all('event_rsvps', 'ts'),
     missions:  () => all('missions', 'ts'),
     tickets:   () => all('amfi_tickets', 'created_at'),
-    messages:  () => all('amfi_messages', 'ts')
+    messages:  () => all('amfi_messages', 'ts'),
+    // bestaat pas na supabase/update-v2-amfi-ruil.sql — tot dan leeg i.p.v. een fout
+    inkoop:    () => all('amfi_inkoop', 'ts').catch(e => { console.warn(e); return []; })
   };
   // Realtime-tabel → loader
   const TABLES = {
     loods_log: ['log', 'users'], customers: ['customers'], customer_log: ['customerLog', 'customers'], loods_baseline: ['baseline'],
     portal_settings: ['settings'], absences: ['absences'], notices: ['notices'], events: ['events', 'rsvps'], event_rsvps: ['rsvps'],
     missions: ['missions'],
-    amfi_tickets: ['tickets'], amfi_messages: ['messages']
+    amfi_tickets: ['tickets'], amfi_messages: ['messages'], amfi_inkoop: ['inkoop']
   };
 
   let state = null;
@@ -113,10 +115,11 @@
       rsvps: raw.rsvps || [],
       missions: raw.missions || [],
       tickets: (raw.tickets || []).map(t => ({ ...t, read: t.read || {}, messages: msgs.get(t.id) || [] })),
+      amfiInkoop: (raw.inkoop || []).map(i => ({ ...i, prijs: Number(i.prijs), totaal: Number(i.totaal) })),
       settings: {
         // geen echte codes: enkel een versie, zodat een gewijzigde code iedereen terug op slot zet
         opslag_code: 'v' + (ps.opslag_v || 1),
-        amfi: ps.amfi && ps.amfi.winkels ? ps.amfi : JSON.parse(JSON.stringify(AM.DEFAULT)),
+        amfi: AM.settings(ps.amfi && ps.amfi.winkels ? ps.amfi : JSON.parse(JSON.stringify(AM.DEFAULT))),
         site_onderhoud: ps.site_onderhoud !== false
       }
     };
@@ -337,16 +340,15 @@
 
     // ---- amfi loods ----
     // actor = { userId, name, boss } — boss = Boss menu ontgrendeld
-    async createAmfiTicket(userId, { keer, levering, opmerking }) {
+    // altijd exact de ruil; de database controleert het aantal, de open tickets en de cooldown en maakt de offerte zelf
+    async createAmfiTicket(userId, { opmerking }) {
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
-      keer = posInt(keer);
-      if (keer > AM.MAX_KEER) throw E('TE_VEEL_KEER');
-      if (!AM.LEVERING[levering]) throw E('ONGELDIGE_LEVERING');
-      const quote = AM.quote(state.settings.amfi, keer, levering);
+      if (AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
+      const quote = AM.quote(state.settings.amfi);
       // de database vult ticketnummer en plaats in de wachtrij in
       const intro = AM.intro({ nr: '{nr}', user_name: u.name, quote }, '{pos}');
-      const id = await rpc('fn_amfi_create_ticket', { p_user_id: userId, p_keer: keer, p_levering: levering, p_opmerking: opmerking || null, p_quote: quote, p_intro: intro });
+      const id = await rpc('fn_amfi_create_ticket', { p_user_id: userId, p_keer: quote.keer, p_levering: 'ruil', p_opmerking: opmerking || null, p_quote: quote, p_intro: intro });
       await after(['tickets', 'messages', 'settings']);
       return state.tickets.find(t => t.id === id);
     },
@@ -374,17 +376,20 @@
       await rpc('fn_boss_set_access', { p_user_id: userId, p_key: 'amfi_staff', p_on: !!on, p_boss_pin_hash: needBoss() });
       await after(['users']);
     },
-    async bossSetAmfiSettings({ input_per_keer, output_waarde, prijs_wij_per_keer, winkels }) {
-      const nums = [input_per_keer, output_waarde, prijs_wij_per_keer].map(Number);
-      if (nums.some(n => !Number.isFinite(n) || n < 0)) throw E('ONGELDIGE_PRIJZEN');
-      const ws = (winkels || []).map(w => ({ naam: String(w.naam || '').trim().slice(0, 40), info: String(w.info || '').trim().slice(0, 120) || null,
-        producten: (w.producten || []).map(p => ({ naam: String(p.naam || '').trim().slice(0, 40), aantal_per_keer: Number(p.aantal_per_keer),
-          prijs: p.prijs === '' || p.prijs == null ? null : Number(p.prijs), zwart: !!p.zwart })) }));
-      const bad = ws.some(w => !w.naam || w.producten.some(p => !p.naam || !Number.isFinite(p.aantal_per_keer) || p.aantal_per_keer < 0 || (p.prijs != null && (!Number.isFinite(p.prijs) || p.prijs < 0))));
-      if (bad) throw E('ONGELDIGE_PRIJZEN');
-      const settings = { ...state.settings.amfi, input_per_keer: nums[0], output_waarde: nums[1], prijs_wij_per_keer: nums[2], winkels: ws };
+    async bossSetAmfiSettings({ ruil, winkels }) {
+      const settings = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, winkels }) };
       await rpc('fn_boss_set_amfi_settings', { p_settings: settings, p_boss_pin_hash: needBoss() });
       await after(['settings']);
+    },
+    // inkoop (boss): de database kijkt na of het product toegelaten is en neemt de prijs uit de instellingen
+    async addAmfiInkoop(userId, { product, aantal, note }, door) {
+      if (!AM.findInkoopProduct(state.settings.amfi, product)) throw E('PRODUCT_NIET_TOEGELATEN');
+      await rpc('fn_amfi_add_inkoop', { p_user_id: userId, p_product: product, p_aantal: posInt(aantal), p_note: note || null, p_door: door });
+      await after(['inkoop']);
+    },
+    async deleteAmfiInkoop(id) {
+      await rpc('fn_amfi_delete_inkoop', { p_id: id });
+      await after(['inkoop']);
     },
 
     // ---- agenda ----

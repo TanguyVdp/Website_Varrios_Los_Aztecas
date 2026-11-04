@@ -1,7 +1,7 @@
 /* Boss menu: enkel voor leden met het vinkje "Boss menu" (Ledenlijst) en de eigenaar. Keuzemenu: Wiet loods-instellingen,
  * mededelingen, agenda, afwezigheden beoordelen, … */
 (function (App) {
-  const U = App.U, C = App.C, I = App.icon, R = App.RULES, L = App.L;
+  const U = App.U, C = App.C, I = App.icon, R = App.RULES, L = App.L, AM = App.AMFI;
   const ui = { tab: 'overzicht', person: 'all', limit: 30 };
   const unlocked = () => App.can('boss');
 
@@ -352,11 +352,11 @@
     }, { wide: true });
   }
 
-  // ---------- amfi loods: prijzen + medewerkers ----------
+  // ---------- amfi loods: overzicht, inkoop, instellingen ----------
+  const amUi = { limit: 15 };
   function prodRow(p) {
     return `<div class="prod-row">
       <input class="input" data-p="naam" maxlength="40" placeholder="Product" value="${U.esc(p.naam || '')}">
-      <input class="input mono" data-p="aantal_per_keer" type="number" min="0" step="1" placeholder="0" value="${p.aantal_per_keer ?? ''}">
       <input class="input mono" data-p="prijs" type="number" min="0" step="0.01" placeholder="—" value="${p.prijs ?? ''}">
       <label class="zw-chk" title="Betalen met zwart geld"><input type="checkbox" data-p="zwart" ${p.zwart ? 'checked' : ''}><span>zwart</span></label>
       <button type="button" class="abs-del" data-prod-del title="Verwijderen">${I('trash', 13)}</button>
@@ -366,39 +366,120 @@
     return `<div class="shop-card">
       <div class="shop-head">
         <input class="input" data-w="naam" maxlength="40" placeholder="Winkel / locatie" value="${U.esc(w.naam || '')}">
+        <label class="zw-chk shop-ink" title="Producten uit deze winkel mogen als inkoop geregistreerd worden"><input type="checkbox" data-w="inkoop" ${w.inkoop ? 'checked' : ''}><span>inkoop</span></label>
         <button type="button" class="abs-del" data-shop-del title="Winkel verwijderen">${I('trash', 13)}</button>
       </div>
       <input class="input shop-info" data-w="info" maxlength="120" placeholder="Extra info (optioneel) — bv. postcode, waar de NPC staat" value="${U.esc(w.info || '')}">
-      <div class="prod-head"><span>Product</span><span>Per keer</span><span>Prijs/stuk €</span><span></span><span></span></div>
+      <div class="prod-head"><span>Product</span><span>Prijs/stuk €</span><span></span><span></span></div>
       <div class="shop-prods">${(w.producten || []).map(prodRow).join('')}</div>
       <button type="button" class="btn ghost sm" data-prod-add>${I('plus', 13)} Product</button>
     </div>`;
   }
-  function sAmfi({ state }) {
-    const s = state.settings.amfi;
+  const RUIL_FIELDS = [
+    ['amfetamine', 'Amfetamine per ticket', 'exact zoveel'],
+    ['wit_geld', 'Wit geld €', 'naar de loods'],
+    ['zwart_geld', 'Zwart geld €', 'van de klant'],
+    ['mythisch_klant', 'Mythische terug', 'naar de klant'],
+    ['mythisch_loods', 'Mythische loods', 'blijft in de loods'],
+    ['cooldown_uur', 'Cooldown (uur)', 'na het afronden']
+  ];
+  const mEur = n => AM.eur(n);
+
+  function sAmfi(ctx) {
+    const { state } = ctx;
+    const s = AM.settings(state.settings.amfi);
     const leden = state.users.filter(u => !L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
+    const ov = AM.overzicht(state.tickets, state.amfiInkoop), t = ov.tot;
+    const voorraad = AM.voorraad(state.amfiInkoop);
+    const inkoop = [...(state.amfiInkoop || [])].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+    const prods = AM.inkoopProducten(s);
+    const byShop = prods.reduce((m, p) => { (m[p.winkel] = m[p.winkel] || []).push(p); return m; }, {});
+    const geweigerd = s.winkels.filter(w => !w.inkoop).map(w => w.naam);
+    const userOf = r => r.user_id && state.users.find(u => u.id === r.user_id);
     return `
+      <div class="kpi-row four">
+        ${C.kpi({ label: 'Mythische (loods)', value: U.num(t.mythisch_loods), icon: 'flask', tone: 'sky', sub: `+${U.num(s.ruil.mythisch_loods)} per afgeronde ruil` })}
+        ${C.kpi({ label: 'Wit geld verdiend', value: mEur(t.wit_geld), icon: 'euro', tone: 'lime', sub: `+${mEur(s.ruil.wit_geld)} per ruil` })}
+        ${C.kpi({ label: 'Mensen geholpen', value: U.num(t.geholpen), icon: 'users', tone: 'violet', sub: `${U.num(t.mythisch_klant)} mythische uitgedeeld` })}
+        ${C.kpi({ label: 'Inkoop uitgegeven', value: mEur(t.kost), icon: 'box', tone: 'warn', sub: t.kost_zwart ? `+ ${mEur(t.kost_zwart)} zwart` : `${U.num(inkoop.length)} registraties` })}
+      </div>
+
+      <section class="card flush">
+        ${C.cardHead('Per medewerker', 'users', '<span class="muted small">geholpen = afgeronde tickets</span>')}
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Medewerker</th><th class="num">Geholpen</th><th class="num">Wit geld ontvangen</th><th class="num">Mythische (loods)</th><th class="num">Inkoop uitgegeven</th></tr></thead>
+          <tbody>${ov.rows.map(r => `<tr>
+            <td><div class="who-cell">${C.avatar(userOf(r) || { name: r.naam }, 24)}<b class="tcap">${U.esc(r.naam)}</b></div></td>
+            <td class="num"><b>${U.num(r.geholpen)}</b> <span class="dim small">${r.geholpen === 1 ? 'persoon' : 'mensen'}</span></td>
+            <td class="num mono">${mEur(r.wit_geld)}</td>
+            <td class="num mono">${U.num(r.mythisch_loods)}</td>
+            <td class="num mono">${mEur(r.kost)}${r.kost_zwart ? ` <span class="dim small">+ ${mEur(r.kost_zwart)} zwart</span>` : ''}</td>
+          </tr>`).join('') || `<tr><td colspan="5">${C.empty('Nog geen afgeronde tickets of inkoop.', 'users')}</td></tr>`}</tbody>
+          ${ov.rows.length ? `<tfoot><tr class="am-total"><td><b>Totaal</b></td><td class="num"><b>${U.num(t.geholpen)}</b></td><td class="num mono"><b>${mEur(t.wit_geld)}</b></td><td class="num mono"><b>${U.num(t.mythisch_loods)}</b></td><td class="num mono"><b>${mEur(t.kost)}</b>${t.kost_zwart ? ` <span class="dim small">+ ${mEur(t.kost_zwart)} zwart</span>` : ''}</td></tr></tfoot>` : ''}
+        </table></div>
+      </section>
+
       <div class="grid-2 amfi-boss">
         <section class="card">
-          ${C.cardHead('Prijzen & recept', 'euro')}
-          <p class="muted small">Per <b>1 keer</b>: ${U.esc(s.input_label)} + de ingrediënten hieronder = 1 ${U.esc(s.output_label)}. Nieuwe tickets rekenen met deze waarden (bestaande tickets houden hun prijs). Prijs leeg = geen prijs (bv. zelf te halen).</p>
-          <form class="stack" id="am-form" autocomplete="off">
-            <div class="row-3">
-              <label class="field"><span>${U.esc(s.input_label)} / keer</span><input class="input mono" id="am-in" type="number" min="0" step="1" value="${s.input_per_keer}"></label>
-              <label class="field"><span>Waarde 1 poeder €</span><input class="input mono" id="am-waarde" type="number" min="0" step="1" value="${s.output_waarde}"></label>
-              <label class="field"><span>Wij kopen aan € / poeder</span><input class="input mono" id="am-wij" type="number" min="0" step="1" value="${s.prijs_wij_per_keer}"></label>
+          ${C.cardHead('Inkoop registreren', 'plus')}
+          <p class="muted small">Wat er voor de loods gekocht en in de loods gelegd is. Enkel producten uit ${Object.keys(byShop).map(n => `<b>${U.esc(n)}</b>`).join(', ') || 'een toegelaten winkel'}${geweigerd.length ? ` — niet uit ${geweigerd.map(U.esc).join(', ')}` : ''}. De prijs komt uit de instellingen hieronder.</p>
+          <form class="stack" id="ink-form" autocomplete="off">
+            <div class="row-2">
+              <label class="field"><span>Gekocht door</span><select class="input" id="ink-user">${leden.map(u => `<option value="${u.id}" ${ctx.me && u.id === ctx.me.id ? 'selected' : ''}>${U.esc(u.name)}</option>`).join('')}</select></label>
+              <label class="field"><span>Product</span><select class="input" id="ink-prod">${Object.entries(byShop).map(([w, ps]) => `<optgroup label="${U.esc(w)}">${ps.map(p => `<option value="${U.esc(p.naam)}" data-prijs="${p.prijs}">${U.esc(p.naam)} — ${mEur(p.prijs)}${p.zwart ? ' zwart' : ''}</option>`).join('')}</optgroup>`).join('')}</select></label>
             </div>
-            <div class="field"><span>Ingrediënten per keer, per winkel</span>
+            <div class="row-2">
+              <label class="field"><span>Aantal in de loods gelegd</span><input class="input mono" id="ink-aantal" type="number" min="1" step="1" inputmode="numeric" placeholder="0"></label>
+              <label class="field"><span>Opmerking <em>(optioneel)</em></span><input class="input" id="ink-note" maxlength="120" placeholder="bv. voor 5 tickets"></label>
+            </div>
+            <div class="ink-total muted small" id="ink-total"></div>
+            <div class="err" id="ink-err"></div>
+            <button class="btn sky-btn block" type="submit" ${prods.length ? '' : 'disabled'}>${I('plus', 14)} Registreren</button>
+          </form>
+        </section>
+        <section class="card flush">
+          ${C.cardHead('Voorraad in de loods', 'box', `<span class="muted small">totaal ingelegd</span>`)}
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Product</th><th>Winkel</th><th class="num">Aantal</th><th class="num">Kost</th></tr></thead>
+            <tbody>${voorraad.map(v => `<tr><td><b>${U.esc(v.product)}</b></td><td class="dim">${U.esc(v.winkel)}</td><td class="num mono">${U.num(v.aantal)}</td><td class="num mono">${mEur(v.totaal)}</td></tr>`).join('') || `<tr><td colspan="4">${C.empty('Nog niets ingelegd.', 'box')}</td></tr>`}</tbody>
+          </table></div>
+        </section>
+      </div>
+
+      <section class="card flush">
+        ${C.cardHead('Inkoop — alle registraties', 'list', `<span class="muted small">${U.num(inkoop.length)} ${U.plural(inkoop.length, 'regel', 'regels')}</span>`)}
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Wanneer</th><th>Gekocht door</th><th>Product</th><th class="num">Aantal</th><th class="num">Prijs</th><th class="num">Totaal</th><th></th></tr></thead>
+          <tbody>${inkoop.slice(0, amUi.limit).map(i => `<tr>
+            <td class="dim">${U.ts(i.ts)}</td>
+            <td><span class="tcap">${U.esc(i.user_name)}</span>${i.door && i.door !== i.user_name ? ` <span class="dim small">(ingevuld door ${U.esc(i.door)})</span>` : ''}</td>
+            <td><b>${U.esc(i.product)}</b> <span class="dim small">${U.esc(i.winkel)}</span>${i.note ? `<div class="dim small">${U.esc(i.note)}</div>` : ''}</td>
+            <td class="num mono">${U.num(i.aantal)}</td>
+            <td class="num mono">${mEur(i.prijs)}</td>
+            <td class="num mono">${mEur(i.totaal)}${i.zwart ? ' <span class="dim small">zwart</span>' : ''}</td>
+            <td class="num"><button class="abs-del" data-ink-del="${i.id}" title="Verwijderen">${I('trash', 13)}</button></td>
+          </tr>`).join('') || `<tr><td colspan="7">${C.empty('Nog geen inkoop geregistreerd.', 'list')}</td></tr>`}</tbody>
+        </table></div>
+        ${inkoop.length > amUi.limit ? `<div class="card-pad"><button class="btn ghost sm" data-ink-more>Meer tonen</button></div>` : ''}
+      </section>
+
+      <div class="grid-2 amfi-boss">
+        <section class="card">
+          ${C.cardHead('Instellingen', 'gear')}
+          <p class="muted small">De vaste ruil per ticket en de producten met hun prijs. Nieuwe tickets gebruiken deze waarden; bestaande tickets houden de ruil van toen ze aangemaakt werden. Vink <b>inkoop</b> aan bij de winkels waarvan producten als inkoop geregistreerd mogen worden. Prijs leeg = geen prijs (kan niet als inkoop).</p>
+          <form class="stack" id="am-form" autocomplete="off">
+            <div class="ruil-grid">${RUIL_FIELDS.map(([k, label, hint]) => `<label class="field"><span>${label} <em>${hint}</em></span><input class="input mono" data-ruil="${k}" type="number" min="0" step="1" value="${s.ruil[k]}"></label>`).join('')}</div>
+            <div class="field"><span>Winkels & producten</span>
               <div id="am-shops">${s.winkels.map(shopCard).join('')}</div>
               <button type="button" class="btn ghost sm" id="am-shop-add">${I('plus', 13)} Winkel / locatie toevoegen</button>
             </div>
             <div class="err" id="am-err"></div>
-            <button class="btn sky-btn block" type="submit">Prijzen opslaan</button>
+            <button class="btn sky-btn block" type="submit">Instellingen opslaan</button>
           </form>
         </section>
         <section class="card">
           ${C.cardHead('Amfi-medewerkers', 'users', `<a class="link-more" style="color:var(--violet)" href="#/boss/leden">Ledenlijst ${I('arrowRight', 13)}</a>`)}
-          <p class="muted small">Wie medewerker is (wachtrij zien, tickets opnemen, chatten en afronden) vink je aan in <b>Boss menu → Ledenlijst</b>, kolom Amfi loods.</p>
+          <p class="muted small">Wie medewerker is (wachtrij zien, tickets opnemen, chatten en afronden) vink je aan in <b>Boss menu → Ledenlijst</b>, kolom Amfi loods. Wie een ticket afrondt, krijgt het op zijn naam in het overzicht hierboven.</p>
           <div class="staff-chips">${leden.filter(u => u.amfi_staff).map(u => `<span class="staff-chip">${C.avatar(u, 22)}<b class="tcap">${U.esc(u.name)}</b></span>`).join('') || '<span class="dim small">Nog niemand aangevinkt.</span>'}</div>
         </section>
       </div>`;
@@ -465,7 +546,7 @@
       desc: 'Keur afwezigheden goed of af en reageer erop.',
       badge: ({ state }) => { const n = state.absences.filter(a => a.status === 'aangevraagd').length; return n ? { t: `${n} te keuren`, tone: 'warn', hot: true } : { t: 'alles bekeken', tone: 'lime' }; } },
     { id: 'amfi', label: 'Amfi loods', icon: 'flask', tone: 'sky',
-      desc: 'Recept per winkel en de prijs per poeder.',
+      desc: 'Wie hoeveel mensen hielp, inkoop en voorraad, kosten, opbrengst (mythische + wit geld) en de ruil-instellingen.',
       badge: ({ state }) => { const n = state.tickets.filter(t => t.status === 'wachtrij').length; return { t: `${n} in wachtrij`, tone: n ? 'sky' : 'lime' }; } },
     { id: 'opslag', label: 'Opslag loods', icon: 'box', tone: 'warn',
       desc: 'Zien wie toegang heeft en wie de dagelijkse missies doet.',
@@ -795,17 +876,42 @@
           C.busy(form.querySelector('button[type=submit]'), async () => {
             try {
               const winkels = [...shops.querySelectorAll('.shop-card')].map(c => ({
-                naam: c.querySelector('[data-w="naam"]').value, info: c.querySelector('[data-w="info"]').value,
+                naam: c.querySelector('[data-w="naam"]').value, info: c.querySelector('[data-w="info"]').value, inkoop: c.querySelector('[data-w="inkoop"]').checked,
                 producten: [...c.querySelectorAll('.prod-row')].map(r => ({
-                  naam: r.querySelector('[data-p="naam"]').value, aantal_per_keer: r.querySelector('[data-p="aantal_per_keer"]').value,
-                  prijs: r.querySelector('[data-p="prijs"]').value, zwart: r.querySelector('[data-p="zwart"]').checked
-                })).filter(p => p.naam.trim() || p.aantal_per_keer || p.prijs)
+                  naam: r.querySelector('[data-p="naam"]').value, prijs: r.querySelector('[data-p="prijs"]').value, zwart: r.querySelector('[data-p="zwart"]').checked
+                })).filter(p => p.naam.trim() || p.prijs)
               })).filter(w => w.naam.trim() || w.producten.length);
-              await App.store.bossSetAmfiSettings({ input_per_keer: root.querySelector('#am-in').value, output_waarde: root.querySelector('#am-waarde').value, prijs_wij_per_keer: root.querySelector('#am-wij').value, winkels });
-              C.toast('Amfi-prijzen opgeslagen');
+              const ruil = {};
+              root.querySelectorAll('[data-ruil]').forEach(i => { ruil[i.dataset.ruil] = i.value === '' ? NaN : Number(i.value); });
+              await App.store.bossSetAmfiSettings({ ruil, winkels });
+              C.toast('Amfi-instellingen opgeslagen');
             } catch (ex) { root.querySelector('#am-err').textContent = U.friendlyError(ex); }
           });
         });
+        // inkoop registreren: totaal live tonen (aantal × prijs uit de instellingen)
+        const ink = root.querySelector('#ink-form');
+        const inkTotal = () => {
+          const opt = root.querySelector('#ink-prod').selectedOptions[0], n = Number(root.querySelector('#ink-aantal').value);
+          root.querySelector('#ink-total').innerHTML = opt && n > 0 ? `${U.num(n)} × ${AM.eur(opt.dataset.prijs)} = <b class="mono">${AM.eur(Math.round(n * opt.dataset.prijs * 100) / 100)}</b>` : '';
+        };
+        root.querySelector('#ink-prod').addEventListener('change', inkTotal);
+        root.querySelector('#ink-aantal').addEventListener('input', inkTotal);
+        ink.addEventListener('submit', e => {
+          e.preventDefault();
+          C.busy(ink.querySelector('button[type=submit]'), async () => {
+            try {
+              const product = root.querySelector('#ink-prod').value;
+              await App.store.addAmfiInkoop(root.querySelector('#ink-user').value, { product, aantal: root.querySelector('#ink-aantal').value, note: root.querySelector('#ink-note').value }, ctx.me ? ctx.me.name : who);
+              C.toast(`Inkoop geregistreerd: ${U.esc(product)}`);
+            } catch (ex) { root.querySelector('#ink-err').textContent = U.friendlyError(ex); }
+          });
+        });
+        root.querySelectorAll('[data-ink-del]').forEach(b => b.addEventListener('click', () => {
+          const i = ctx.state.amfiInkoop.find(x => x.id === b.dataset.inkDel); if (!i) return;
+          confirmModal('Inkoop verwijderen?', `${U.num(i.aantal)}× ${U.esc(i.product)} van ${U.esc(i.user_name)} (${AM.eur(i.totaal)}) wordt uit het overzicht gehaald.`, 'Verwijderen',
+            async () => { await App.store.deleteAmfiInkoop(i.id); C.toast('Inkoop verwijderd'); });
+        }));
+        root.querySelector('[data-ink-more]')?.addEventListener('click', () => { amUi.limit += 30; App.rerender(); });
       }
 
       if (sec === 'website') {

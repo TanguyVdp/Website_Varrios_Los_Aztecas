@@ -172,12 +172,15 @@
 
   function deptCard(m, ctx) {
     const stats = STATS[m.id] ? STATS[m.id](ctx) : [];
+    // amfi: persoonlijke cooldown na je laatste ruil (wanneer je weer een ticket mag maken)
+    const cd = m.id === 'amfiloods' && ctx.me && App.amfiCooldown(ctx);
+    const cdBadge = cd ? (c => `<span class="dept-badge cd" title="Nieuw ticket vanaf ${c.when}">${I('clock', 11)} ${c.left}</span>`)(App.amfiCooldownText(cd)) : '';
     return `
       <a class="dept ${m.soon ? 'is-soon' : 'is-live'}" href="#/${m.routes[0].path}" style="--accent:var(--${m.tone});--accent-soft:var(--${m.tone}-soft)">
         <span class="dept-bg">${I(m.icon, 150)}</span>
         <div class="dept-top">
           <span class="dept-ic">${I(m.icon, 22)}</span>
-          <span class="dept-badges">${m.access && ctx.me && !App.hasAccess(ctx.me, m.access) ? `<span class="dept-badge noacc">${I('lock', 11)} Geen toegang</span>` : ''}${m.soon ? `<span class="dept-badge soon">${I('sparkle', 11)} In opbouw</span>` : m.onderhoud ? `<span class="dept-badge soon">${I('clock', 11)} In onderhoud</span>` : `<span class="dept-badge live"><i></i>Actief</span>`}</span>
+          <span class="dept-badges">${cdBadge}${m.access && ctx.me && !App.hasAccess(ctx.me, m.access) ? `<span class="dept-badge noacc">${I('lock', 11)} Geen toegang</span>` : ''}${m.soon ? `<span class="dept-badge soon">${I('sparkle', 11)} In opbouw</span>` : m.onderhoud ? `<span class="dept-badge soon">${I('clock', 11)} In onderhoud</span>` : `<span class="dept-badge live"><i></i>Actief</span>`}</span>
         </div>
         <div class="dept-body">
           <h4>${m.name}</h4>

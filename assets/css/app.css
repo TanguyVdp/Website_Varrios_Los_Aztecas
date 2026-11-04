@@ -1337,3 +1337,30 @@ button.chk:hover { border-color: var(--accent, var(--sky)); }
 .discord-id-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; margin: 18px auto; padding: 12px 16px;
   max-width: 420px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
 .discord-id-box b { font-size: 16px; letter-spacing: .02em; user-select: all; }
+
+/* ---------- amfi loods: vaste ruil, cooldown, beheer in het Boss menu ---------- */
+.kpi.tone-sky .kpi-value, .kpi.tone-sky .kpi-ic { color: var(--sky); }
+.kpi.tone-warn .kpi-value, .kpi.tone-warn .kpi-ic { color: var(--warn); }
+.amfi-cd { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; padding: 12px 16px; border-radius: 14px; background: var(--sky-soft); border: 1px solid rgba(111,183,255,.25); text-align: right; }
+.amfi-cd-label { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--sky); }
+.amfi-cd b { font-size: 16px; }
+.amfi-cd-left { font-size: 12px; color: var(--muted); }
+.dept-badge.cd { color: var(--sky); background: var(--sky-soft); border: 1px solid rgba(111,183,255,.28); text-transform: none; letter-spacing: 0; }
+.fin-checks { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.fin-check { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font-size: 13.5px; }
+.fin-check input { width: 17px; height: 17px; accent-color: var(--lime); flex-shrink: 0; }
+.fin-check:has(input:checked) { border-color: rgba(166,242,77,.4); background: var(--lime-soft); }
+.fin-check em { font-style: normal; color: var(--muted); }
+.ruil-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.amfi-boss .table th, .amfi-boss .table td { padding-left: 12px; padding-right: 12px; }
+.ruil-grid .field em { display: block; font-style: normal; font-weight: 400; color: var(--dim); text-transform: none; letter-spacing: 0; }
+.shop-card .prod-head, .shop-card .prod-row { grid-template-columns: minmax(0, 1.6fr) minmax(0, .9fr) 64px 30px; }
+.shop-ink { flex-shrink: 0; padding: 0 6px; }
+.table tfoot td { padding: 11px 20px; border-top: 1px solid var(--line-2); background: rgba(0,0,0,.14); white-space: nowrap; }
+.ink-total:empty { display: none; }
+.ink-total b { color: var(--sky); }
+@media (max-width: 720px) {
+  .ruil-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shop-card .prod-row { grid-template-columns: minmax(0, 1fr) 76px 50px 30px; }
+  .amfi-cd { align-items: flex-start; text-align: left; }
+}

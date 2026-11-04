@@ -127,33 +127,55 @@
   // ---------- amfi loods: tickets (demo) ----------
   const AM = App.AMFI;
   const msg = (from, u, text, ts) => ({ id: U.uid(), from, user_id: u ? u.id : null, user_name: u ? u.name : AM.BOT, text, ts });
-  function newTicket(st, u, keer, levering, opmerking, ts) {
-    const t = { id: U.uid(), nr: ++st.ticketSeq, user_id: u.id, user_name: u.name, keer, levering, opmerking: opmerking || null,
-      quote: AM.quote(st.settings.amfi, keer, levering), status: 'wachtrij', medewerker_id: null, medewerker_naam: null,
-      created_at: ts, updated_at: ts, messages: [] };
+  function newTicket(st, u, opmerking, ts) {
+    const quote = AM.quote(st.settings.amfi);
+    const t = { id: U.uid(), nr: ++st.ticketSeq, user_id: u.id, user_name: u.name, keer: quote.keer, levering: 'ruil', opmerking: opmerking || null,
+      quote, status: 'wachtrij', medewerker_id: null, medewerker_naam: null, created_at: ts, updated_at: ts, messages: [] };
     st.tickets.push(t);
     t.messages.push(msg('bot', null, AM.intro(t, AM.position(st.tickets, t)), ts));
     if (opmerking) t.messages.push(msg('user', u, opmerking, ts));
     return t;
   }
+  // ticket afronden: de ruil vastleggen (zoals _fn_amfi_set_status in supabase/update-v2-amfi-ruil.sql)
+  function finishTicket(t, u, name, ts) {
+    const q = t.quote, ruil = AM.isRuil(t);
+    Object.assign(t, { status: 'klaar', updated_at: ts, afgerond_at: ts, afgerond_door_id: u ? u.id : null, afgerond_door_naam: name,
+      medewerker_id: t.medewerker_id || (u ? u.id : null), medewerker_naam: t.medewerker_naam || name,
+      amfetamine: ruil ? q.amfetamine : null, wit_geld: ruil ? q.wit_geld : null, zwart_geld: ruil ? q.zwart_geld : null,
+      mythisch_klant: ruil ? q.mythisch_klant : null, mythisch_loods: ruil ? q.mythisch_loods : null });
+    const until = new Date(new Date(ts).getTime() + (q.cooldown_uur || 0) * 3600000);
+    t.messages.push(msg('bot', null, ruil
+      ? `Ruil afgerond door ${name}: ${U.num(q.amfetamine)} amfetamine + ${AM.eur(q.wit_geld)} wit + ${AM.eur(q.zwart_geld)} zwart ontvangen → ${U.num(q.mythisch_klant)} mythische gegeven. Je kan een nieuw ticket maken vanaf ${U.ts(until)}. Bedankt!`
+      : `Ticket afgerond door ${name}. Bedankt!`, ts));
+  }
   function seedAmfi(st) {
     st.settings.amfi = JSON.parse(JSON.stringify(AM.DEFAULT));
-    st.ticketSeq = 0; st.tickets = [];
+    st.ticketSeq = 0; st.tickets = []; st.amfiInkoop = [];
     const by = n => st.users.find(u => u.name === n);
     ['kenzo', 'matis'].forEach(n => { const u = by(n); if (u) { u.amfi_staff = true; u.access = { ...(u.access || {}), amfi: true }; } });
     const ago = m => iso(Date.now() - m * 60000);
-    const mk = (n, keer, lev, m, opm) => by(n) ? newTicket(st, by(n), keer, lev, opm, ago(m)) : null;
-    const t1 = mk('ivar', 3, 'wij', 60 * 26);
-    if (t1) { Object.assign(t1, { status: 'klaar', medewerker_id: by('kenzo').id, medewerker_naam: 'kenzo', updated_at: ago(60 * 20) });
-      t1.messages.push(msg('bot', null, 'kenzo helpt je nu verder.', ago(60 * 25)), msg('staff', by('kenzo'), 'Yo, betaal je aan mij of via de pot?', ago(60 * 25 - 2)),
-        msg('user', by('ivar'), 'Ik geef het je cash bij de loods.', ago(60 * 25 - 5)), msg('bot', null, 'Ticket afgerond door kenzo. Bedankt!', ago(60 * 20))); }
-    const t2 = mk('dario', 2, 'zelf', 50, 'Ik heb de jodium al, de rest haal ik vanavond.');
+    const mk = (n, m, opm) => by(n) ? newTicket(st, by(n), opm, ago(m)) : null;
+    const done = (n, staff, m, endM) => {
+      const t = mk(n, m); if (!t) return;
+      Object.assign(t, { status: 'bezig', medewerker_id: by(staff).id, medewerker_naam: staff });
+      t.messages.push(msg('bot', null, `${staff} helpt je nu verder.`, ago(m - 5)), msg('staff', by(staff), 'Kom maar naar de loods, ik sta klaar.', ago(m - 7)));
+      finishTicket(t, by(staff), staff, ago(endM));
+    };
+    done('siebe', 'kenzo', 60 * 24 * 6, 60 * 24 * 6 - 60);
+    done('lars', 'matis', 60 * 24 * 4, 60 * 24 * 4 - 45);
+    done('ivar', 'kenzo', 60 * 26, 60 * 20);
+    const t2 = mk('dario', 50, 'Ik heb alles bij, kan vanavond langskomen.');
     if (t2) { Object.assign(t2, { status: 'bezig', medewerker_id: by('matis').id, medewerker_naam: 'matis', updated_at: ago(20) });
       t2.messages.push(msg('bot', null, 'matis helpt je nu verder.', ago(25)), msg('staff', by('matis'), 'Top. Laat iets weten als je alles hebt, dan spreken we af aan de loods.', ago(20))); }
-    const t3 = mk('bob', 5, 'zelf', 18);
-    if (t3) { Object.assign(t3, { status: 'bezig', medewerker_id: by('kenzo').id, medewerker_naam: 'kenzo', updated_at: ago(4) });
-      t3.messages.push(msg('bot', null, 'kenzo helpt je nu verder.', ago(9)), msg('staff', by('kenzo'), 'Yo Bob, heb je de pseudoefedrine al kunnen kopen?', ago(4))); }
-    mk('yusuf', 1, 'wij', 7, 'Liefst vandaag nog als dat lukt 🙏');
+    mk('yusuf', 7, 'Liefst vandaag nog als dat lukt 🙏');
+    // inkoop
+    const ink = (n, product, aantal, h) => {
+      const p = AM.findInkoopProduct(st.settings.amfi, product), u = by(n);
+      if (p && u) st.amfiInkoop.push({ id: U.uid(), user_id: u.id, user_name: u.name, winkel: p.winkel, product: p.naam, aantal, prijs: p.prijs,
+        totaal: Math.round(aantal * p.prijs * 100) / 100, zwart: p.zwart, note: null, door: u.name, ts: ago(h * 60) });
+    };
+    ink('kenzo', 'Lactose', 250, 70); ink('kenzo', 'Mannitol', 150, 70); ink('matis', 'Wasbenzine', 300, 30);
+    ink('matis', 'Koffiefilters', 250, 30); ink('kenzo', 'Zout', 250, 8); ink('siebe', 'Baking soda', 250, 3);
   }
 
   // ---------- startdata ----------
@@ -164,7 +186,7 @@
       users: [{ id: U.uid(), name: 'gangpot', pin: null, total_ingelegd: 0, opgehaald: 0, legacy_zakjes: 0, sort_order: 99,
         avatar_url: null, discord_id: null, rank: null, access: { wiet: true, opslag: true, amfi: true }, created_at: now }],
       log: [], customers: [], customerLog: [], baseline: { ...R.BASELINE_DEFAULT, set_at: now },
-      absences: [], notices: [], events: [], rsvps: [], missions: [], tickets: [], ticketSeq: 0,
+      absences: [], notices: [], events: [], rsvps: [], missions: [], tickets: [], ticketSeq: 0, amfiInkoop: [],
       settings: { opslag_code: App.CONFIG.demoOpslagCode, amfi: JSON.parse(JSON.stringify(AM.DEFAULT)) }
     };
   }
@@ -259,7 +281,9 @@
         }
         // nieuw amfi-model (winkels + vaste prijs per poeder): oude demo-tickets opnieuw aanmaken
         if (!state.tickets || !state.settings.amfi || !state.settings.amfi.winkels) seedAmfi(state);
-        if (state.settings.amfi.prijs_wij_per_keer === 10000) state.settings.amfi.prijs_wij_per_keer = 7000;   // oude standaardprijs
+        // amfi = vaste ruil (sinds 04/11/2026): oude demo-tickets (zelf/wij) opnieuw aanmaken
+        if (!state.settings.amfi.ruil) seedAmfi(state);
+        if (!state.amfiInkoop) state.amfiInkoop = [];
         persist();
         return;
       }
@@ -472,15 +496,14 @@
 
     // ---- amfi loods: tickets (later: tabellen amfi_tickets + amfi_messages, RPC's per actie) ----
     // actor = { userId, name, boss } — boss = Boss menu ontgrendeld (mag alles wat een medewerker mag)
-    async createAmfiTicket(userId, { keer, levering, opmerking }) {
+    // altijd exact de ruil uit de instellingen; max 1 open ticket; cooldown na je vorige afgeronde ticket
+    async createAmfiTicket(userId, { opmerking }) {
       await latency();
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
-      keer = posInt(keer);
-      if (keer > AM.MAX_KEER) throw E('TE_VEEL_KEER');
-      if (!AM.LEVERING[levering]) throw E('ONGELDIGE_LEVERING');
       if (state.tickets.some(t => t.user_id === u.id && AM.OPEN(t.status))) throw E('AL_OPEN_TICKET');
-      const t = newTicket(state, u, keer, levering, String(opmerking || '').trim().slice(0, 300), iso(Date.now()));
+      if (AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
+      const t = newTicket(state, u, String(opmerking || '').trim().slice(0, 300), iso(Date.now()));
       commit(); return t;
     },
     async ticketMessage(ticketId, actor, text) {
@@ -519,6 +542,7 @@
       if (!(staff || (owner && status === 'geannuleerd' && t.status === 'wachtrij'))) throw E('GEEN_MEDEWERKER');
       if (!AM.OPEN(t.status)) throw E('TICKET_GESLOTEN');
       const now = iso(Date.now());
+      if (status === 'klaar') { finishTicket(t, u, actor.name, now); commit(); return; }
       if (status === 'wachtrij') Object.assign(t, { medewerker_id: null, medewerker_naam: null });
       t.status = status; t.updated_at = now;
       const txt = { klaar: `Ticket afgerond door ${actor.name}. Bedankt!`, geannuleerd: `Ticket geannuleerd door ${owner ? t.user_name : actor.name}.`,
@@ -541,19 +565,28 @@
       if (on) u.access = { ...(u.access || {}), amfi: true };
       commit();
     },
-    // prijs leeg = geen prijs (bv. zelf te plukken); zwart = met zwart geld te betalen
-    async bossSetAmfiSettings({ input_per_keer, output_waarde, prijs_wij_per_keer, winkels }) {
+    // ruil + winkels/prijzen (prijs leeg = geen prijs; inkoop = winkel toegelaten voor de inkoopregistratie)
+    async bossSetAmfiSettings({ ruil, winkels }) {
       await latency();
-      const nums = [input_per_keer, output_waarde, prijs_wij_per_keer].map(Number);
-      if (nums.some(n => !Number.isFinite(n) || n < 0)) throw E('ONGELDIGE_PRIJZEN');
-      const ws = (winkels || []).map(w => ({ naam: String(w.naam || '').trim().slice(0, 40), info: String(w.info || '').trim().slice(0, 120) || null,
-        producten: (w.producten || []).map(p => ({ naam: String(p.naam || '').trim().slice(0, 40), aantal_per_keer: Number(p.aantal_per_keer),
-          prijs: p.prijs === '' || p.prijs == null ? null : Number(p.prijs), zwart: !!p.zwart })) }));
-      const bad = ws.some(w => !w.naam || w.producten.some(p => !p.naam || !Number.isFinite(p.aantal_per_keer) || p.aantal_per_keer < 0 || (p.prijs != null && (!Number.isFinite(p.prijs) || p.prijs < 0))));
-      if (bad) throw E('ONGELDIGE_PRIJZEN');
-      const s = state.settings.amfi;
-      state.settings.amfi = { ...s, input_per_keer: nums[0], output_waarde: nums[1], prijs_wij_per_keer: nums[2], winkels: ws };
+      state.settings.amfi = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, winkels }) };
       commit();
+    },
+    // inkoop voor de loods (boss): enkel producten uit toegelaten winkels, prijs uit de instellingen
+    async addAmfiInkoop(userId, { product, aantal, note }, door) {
+      await latency();
+      const u = userById(userId);
+      const p = AM.findInkoopProduct(state.settings.amfi, product);
+      if (!p) throw E('PRODUCT_NIET_TOEGELATEN');
+      aantal = posInt(aantal);
+      state.amfiInkoop.push({ id: U.uid(), user_id: u.id, user_name: u.name, winkel: p.winkel, product: p.naam, aantal, prijs: p.prijs,
+        totaal: Math.round(aantal * p.prijs * 100) / 100, zwart: p.zwart, note: String(note || '').trim().slice(0, 120) || null, door, ts: iso(Date.now()) });
+      commit();
+    },
+    async deleteAmfiInkoop(id) {
+      await latency();
+      const i = state.amfiInkoop.findIndex(x => x.id === id);
+      if (i < 0) throw E('NIET_GEVONDEN');
+      state.amfiInkoop.splice(i, 1); commit();
     },
 
     // ---- agenda: aanmelden (later: tabel event_rsvps + fn_set_rsvp) ----

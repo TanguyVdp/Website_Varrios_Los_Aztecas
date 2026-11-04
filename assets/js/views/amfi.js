@@ -1,6 +1,7 @@
-/* Amfi loods: tickets. Een lid maakt een ticket (X keer, zelf aanleveren of laten aankopen +10%), de Varrios bot
- * zet meteen de boodschappenlijst of het te betalen bedrag in het ticket. Amfi-medewerkers (vinkje in het Boss menu)
- * zien de wachtrij, nemen een ticket op en chatten met de persoon tot het afgerond is. */
+/* Amfi loods: tickets voor de vaste ruil (App.AMFI.DEFAULT.ruil, aanpasbaar in Boss menu → Amfi loods).
+ * Een lid maakt een ticket, de Varrios bot zet meteen in het ticket wat er mee moet. Amfi-medewerkers (vinkje in
+ * het Boss menu) zien de wachtrij, nemen een ticket op, chatten en ronden af ("ruil gedaan"). Daarna heeft het lid
+ * een cooldown: het aftellertje staat bovenaan de Amfi loods en rechtsboven op de kaart in de lobby. */
 (function (App) {
   const U = App.U, C = App.C, I = App.icon, AM = App.AMFI;
   const ui = { tab: 'mijn' };
@@ -9,12 +10,23 @@
   const isStaff = ctx => !!(ctx.me && ctx.me.amfi_staff) || App.boss.unlocked();
   const actor = ctx => ({ userId: ctx.me.id, boss: App.boss.unlocked(), name: ctx.me.amfi_staff || !App.boss.unlocked() ? ctx.me.name : App.boss.who(ctx) });
   const byQueue = (a, b) => new Date(a.created_at) - new Date(b.created_at);
-  const pill = (map, k) => { const s = map[k]; return `<span class="rpill" style="--accent:var(--${s.tone})">${I(s.icon, 11)}${s.label}</span>`; };
+  const pill = (map, k) => { const s = map[k] || map.ruil; return `<span class="rpill" style="--accent:var(--${s.tone})">${I(s.icon, 11)}${s.label}</span>`; };
   const fmt = n => AM.eur(n);
+
+  // cooldown van de ingelogde persoon (null = mag een ticket maken) — ook gebruikt in de lobby
+  App.amfiCooldown = ctx => ctx.me ? AM.cooldownUntil(ctx.state.tickets, ctx.me.id, ctx.state.settings.amfi) : null;
+  // "wo 6 nov. om 14:32" + "nog 1d 3u"
+  App.amfiCooldownText = until => {
+    const ms = until - Date.now(), m = Math.max(1, Math.ceil(ms / 60000));
+    const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), min = m % 60;
+    const left = d ? `${d}d ${h}u` : h ? `${h}u ${String(min).padStart(2, '0')}m` : `${min} min`;
+    const day = until.toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' });
+    return { when: `${day} om ${U.clock(until)}`, left: `nog ${left}` };
+  };
 
   // ---------- lijsten ----------
   function ticketRow(t, ctx, staffView) {
-    const pos = AM.position(ctx.state.tickets, t);
+    const pos = AM.position(ctx.state.tickets, t), sm = AM.summary(t);
     const u = ctx.state.users.find(x => x.id === t.user_id) || { name: t.user_name };
     const last = t.messages[t.messages.length - 1];
     return `
@@ -22,9 +34,9 @@
         <span class="tk-nr mono">${nr(t)}${(n => n ? `<i class="tk-new">+${n}</i>` : '')((t.user_id === ctx.me.id || t.medewerker_id === ctx.me.id) ? AM.unread(t, ctx.me.id) : 0)}</span>
         ${staffView ? C.avatar(u, 34) : `<span class="tk-ic">${I('flask', 16)}</span>`}
         <div class="tk-main">
-          <div class="abs-top">${staffView ? `<b class="tcap">${U.esc(t.user_name)}</b>` : `<b>${U.num(t.quote.output)} ${AM.plural(t.quote.output, t.quote.output_label)}</b>`}${pill(AM.STATUS, t.status)}${pill(AM.LEVERING, t.levering)}</div>
+          <div class="abs-top">${staffView ? `<b class="tcap">${U.esc(t.user_name)}</b>` : `<b>${U.num(sm.out)} ${sm.label}</b>`}${pill(AM.STATUS, t.status)}${AM.isRuil(t) ? '' : pill(AM.LEVERING, t.levering)}</div>
           <div class="tk-meta">
-            <span>${U.num(t.quote.input)} ${t.quote.input_label} → ${U.num(t.quote.output)} ${AM.plural(t.quote.output, t.quote.output_label)}</span>
+            <span>${U.num(sm.in)} amfetamine → ${U.num(sm.out)} ${sm.label}</span>
             ${t.levering === 'wij' ? `<span class="gold">${fmt(t.quote.te_betalen)}</span>` : ''}
             ${t.status === 'wachtrij' ? `<span class="sky">plaats ${pos} in de wachtrij</span>` : ''}
             ${t.medewerker_naam ? `<span>${I('user', 12)} <span class="tcap">${U.esc(t.medewerker_naam)}</span></span>` : ''}
@@ -38,30 +50,44 @@
       </div>`;
   }
 
+  // knop rechtsboven: naar je open ticket, nieuw ticket, of het aftellertje van je cooldown
+  function heroAction(ctx, open) {
+    if (open) return `<button class="btn ghost lg" data-open="${open.id}">${I('message', 16)} Naar mijn ticket ${nr(open)}</button>`;
+    const until = App.amfiCooldown(ctx);
+    if (until) { const c = App.amfiCooldownText(until); return `
+      <div class="amfi-cd" title="Na een afgeronde ruil moet je ${AM.settings(ctx.state.settings.amfi).ruil.cooldown_uur} uur wachten">
+        <span class="amfi-cd-label">${I('clock', 13)} Nieuw ticket vanaf</span>
+        <b>${c.when}</b>
+        <span class="amfi-cd-left mono">${c.left}</span>
+      </div>`; }
+    return `<button class="btn sky-btn lg" data-new>${I('plus', 16)} Nieuw ticket</button>`;
+  }
+
   function listView(ctx) {
     const { state, me } = ctx;
-    const staff = isStaff(ctx);
+    const staff = isStaff(ctx), r = AM.settings(state.settings.amfi).ruil;
     const mine = state.tickets.filter(t => t.user_id === me.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const queue = state.tickets.filter(t => t.status === 'wachtrij').sort(byQueue);
     const busy = state.tickets.filter(t => t.status === 'bezig').sort(byQueue);
     const done = state.tickets.filter(t => !AM.OPEN(t.status)).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 10);
     const tab = staff ? ui.tab : 'mijn';
     const open = mine.find(t => AM.OPEN(t.status));
+    const canNew = !open && !App.amfiCooldown(ctx);
     return `
       <section class="abs-hero amfi-hero">
         <div class="abs-hero-text">
           <span class="lh-eyebrow sky">${I('flask', 13)} Amfi loods</span>
-          <h2>Bestellen via een <span class="sky">ticket</span></h2>
-          <p class="muted">1 ${state.settings.amfi.input_label} + de ingrediënten = 1 ${state.settings.amfi.output_label} (waarde ${fmt(state.settings.amfi.output_waarde)}). Koop de ingrediënten zelf, of laat ze door ons aankopen voor ${fmt(state.settings.amfi.prijs_wij_per_keer)} per poeder. Je komt in de wachtrij en een medewerker helpt je verder in je ticket.</p>
+          <h2>Ruil via een <span class="sky">ticket</span></h2>
+          <p class="muted">Breng <b>${U.num(r.amfetamine)} amfetamine</b> + <b>${fmt(r.wit_geld)}</b> wit geld + <b>${fmt(r.zwart_geld)}</b> zwart geld naar de loods en je krijgt <b>${U.num(r.mythisch_klant)} mythische</b> terug. Je komt in de wachtrij en een medewerker helpt je verder in je ticket. Na je ruil kan je pas na ${U.num(r.cooldown_uur)} uur een nieuw ticket maken.</p>
           <div class="lh-meta"><span>${I('clock', 13)} ${queue.length} in de wachtrij</span><span>${I('message', 13)} ${busy.length} in behandeling</span></div>
         </div>
-        ${open ? `<button class="btn ghost lg" data-open="${open.id}">${I('message', 16)} Naar mijn ticket ${nr(open)}</button>` : `<button class="btn sky-btn lg" data-new>${I('plus', 16)} Nieuw ticket</button>`}
+        ${heroAction(ctx, open)}
       </section>
       ${staff ? `<div class="page-tools">${C.seg('tab', [{ value: 'mijn', label: 'Mijn tickets', icon: 'user', count: mine.length }, { value: 'staff', label: 'Wachtrij (medewerker)', icon: 'list', count: queue.length + busy.length }], tab)}</div>` : ''}
       ${tab === 'mijn' ? `
         <section class="card">
           ${C.cardHead('Mijn tickets', 'message')}
-          <div class="tk-list">${mine.map(t => ticketRow(t, ctx, false)).join('') || `<div class="tk-empty">${C.empty('Je hebt nog geen tickets.', 'flask')}<button class="btn sky-btn" data-new>${I('plus', 14)} Eerste ticket aanmaken</button></div>`}</div>
+          <div class="tk-list">${mine.map(t => ticketRow(t, ctx, false)).join('') || `<div class="tk-empty">${C.empty('Je hebt nog geen tickets.', 'flask')}${canNew ? `<button class="btn sky-btn" data-new>${I('plus', 14)} Eerste ticket aanmaken</button>` : ''}</div>`}</div>
         </section>` : `
         <section class="card">
           ${C.cardHead('In de wachtrij', 'clock', `<span class="muted small">eerst binnen, eerst geholpen</span>`)}
@@ -77,77 +103,90 @@
         </section>`}`;
   }
 
-  // ---------- nieuw ticket ----------
+  // ---------- wat er in een ticket staat ----------
+  // de ruil: wat de klant meebrengt en wat hij terugkrijgt
+  function ruilHtml(q) {
+    return `
+      <div class="q-box">
+        <span class="eyebrow">Breng mee naar de loods</span>
+        <ul class="q-list">
+          <li><span>Amfetamine</span><b class="mono">${U.num(q.amfetamine)}</b></li>
+          <li><span>Wit geld</span><b class="mono">${fmt(q.wit_geld)}</b></li>
+          <li><span>Zwart geld</span><b class="mono">${fmt(q.zwart_geld)} <i class="zw">zwart</i></b></li>
+        </ul>
+        <div class="q-total"><span>Je krijgt terug</span><b class="mono">${U.num(q.mythisch_klant)} mythische</b></div>
+      </div>`;
+  }
+  // oude tickets (van vóór de ruil): boodschappenlijst of te betalen bedrag
   function quoteHtml(q) {
+    if (q.type === 'ruil') return ruilHtml(q);
     if (q.levering === 'zelf') return `
       <div class="q-box">
-        <span class="eyebrow">Wat je moet kopen · breng ook ${U.num(q.input)} ${q.input_label} mee</span>
+        <span class="eyebrow">Wat je moest kopen · ${U.num(q.input)} ${q.input_label}</span>
         ${q.winkels.map(w => `
           <div class="q-shop">
             <div class="q-shop-head"><b>${U.esc(w.naam)}</b>${w.info ? `<span>${I('pin', 11)} ${U.esc(w.info)}</span>` : ''}</div>
             <ul class="q-list">${w.items.map(p => `<li><span>${U.num(p.aantal)}× ${U.esc(p.naam)}${p.prijs != null ? ` <em>à ${fmt(p.prijs)}${p.zwart ? ' zwart' : ''}</em>` : ''}</span><b class="mono">${p.totaal != null ? fmt(p.totaal) : '—'}${p.zwart ? ' <i class="zw">zwart</i>' : ''}</b></li>`).join('')}</ul>
-          </div>`).join('') || '<p class="muted small">Nog geen recept ingesteld.</p>'}
+          </div>`).join('')}
         <div class="q-total"><span>Geschatte kost</span><b class="mono">${fmt(q.kost_wit)}${q.kost_zwart ? ` <small>+ ${fmt(q.kost_zwart)} zwart</small>` : ''}</b></div>
       </div>`;
     return `
       <div class="q-box wij">
-        <span class="eyebrow">Wat je moet betalen</span>
-        <ul class="q-list">
-          <li><span>${U.num(q.output)} × ${U.esc(q.output_label)} <em>à ${fmt(q.prijs_per_keer)}</em></span><b class="mono">${fmt(q.te_betalen)}</b></li>
-          <li class="q-sub"><span>Wij kopen alle ingrediënten aan — jij brengt ${U.num(q.input)} ${q.input_label} mee</span><b></b></li>
-        </ul>
+        <span class="eyebrow">Te betalen</span>
+        <ul class="q-list"><li><span>${U.num(q.output)} × ${U.esc(q.output_label)} <em>à ${fmt(q.prijs_per_keer)}</em></span><b class="mono">${fmt(q.te_betalen)}</b></li></ul>
         <div class="q-total"><span>Totaal</span><b class="mono">${fmt(q.te_betalen)}</b></div>
       </div>`;
   }
 
+  // ---------- nieuw ticket ----------
   function newTicketModal(ctx) {
-    const s = ctx.state.settings.amfi;
-    const f = { keer: 1, levering: null };
+    const q = AM.quote(ctx.state.settings.amfi);
     C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--sky)">${I('flask', 18)}</span><div><h3>Nieuw ticket</h3><p class="muted small">${s.input_per_keer} ${s.input_label} + ingrediënten = 1 ${s.output_label} (${fmt(s.output_waarde)})</p></div></div>
+      <div class="af-head"><span class="af-ic" style="--accent:var(--sky)">${I('flask', 18)}</span><div><h3>Nieuw ticket</h3><p class="muted small">Vaste ruil: altijd exact ${U.num(q.amfetamine)} amfetamine per ticket.</p></div></div>
       <form class="stack" id="tk-form" autocomplete="off">
-        <div class="field"><span>Hoeveel ${s.input_label} breng je binnen?</span>
-          <div class="stepper">
-            <button type="button" class="btn ghost" data-step="-1" aria-label="Minder">${I('minus', 16)}</button>
-            <input class="input lg mono" id="tk-keer" type="number" min="1" max="${AM.MAX_KEER}" value="1" inputmode="numeric">
-            <button type="button" class="btn ghost" data-step="1" aria-label="Meer">${I('plus', 16)}</button>
-            <span class="stepper-out" id="tk-out"></span>
-          </div>
-        </div>
-        <div class="field"><span>Ingrediënten</span>
-          <div class="lev-opts">
-            <button type="button" class="lev" data-lev="zelf" style="--accent:var(--sky)">${I('box', 20)}<b>Zelf aanleveren</b><span>Je krijgt de boodschappenlijst per winkel.</span></button>
-            <button type="button" class="lev" data-lev="wij" style="--accent:var(--gold)">${I('euro', 20)}<b>Wij kopen aan</b><span>Wij kopen alle ingrediënten — ${fmt(s.prijs_wij_per_keer)} per poeder.</span></button>
-          </div>
-        </div>
-        <div id="tk-quote"></div>
+        ${ruilHtml(q)}
+        <p class="muted small">${I('clock', 12)} Na je ruil kan je pas na ${U.num(q.cooldown_uur)} uur een nieuw ticket maken.</p>
         <label class="field"><span>Opmerking <em>(optioneel)</em></span><textarea class="input" id="tk-opm" rows="2" maxlength="300" placeholder="bv. liefst vandaag nog"></textarea></label>
         <div class="err" id="tk-err"></div>
-        <button class="btn sky-btn block lg" type="submit" id="tk-submit" disabled>${I('message', 16)} Ticket aanmaken</button>
+        <button class="btn sky-btn block lg" type="submit" id="tk-submit">${I('message', 16)} Ticket aanmaken</button>
       </form>`, modal => {
-      const $ = q => modal.querySelector(q);
-      const sync = () => {
-        f.keer = Math.max(1, Math.min(AM.MAX_KEER, Math.round(Number($('#tk-keer').value) || 1)));
-        $('#tk-out').innerHTML = `${U.num(f.keer * s.input_per_keer)} ${s.input_label} → <b>${U.num(f.keer)}</b> ${AM.plural(f.keer, s.output_label)} <span class="dim">(waarde ${fmt(f.keer * s.output_waarde)})</span>`;
-        $('#tk-quote').innerHTML = f.levering ? quoteHtml(AM.quote(s, f.keer, f.levering)) : '';
-        $('#tk-submit').disabled = !f.levering;
-      };
-      modal.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => { $('#tk-keer').value = Math.max(1, Math.min(AM.MAX_KEER, f.keer + Number(b.dataset.step))); sync(); }));
-      $('#tk-keer').addEventListener('input', sync);
-      modal.querySelectorAll('[data-lev]').forEach(b => b.addEventListener('click', () => {
-        f.levering = b.dataset.lev; modal.querySelectorAll('[data-lev]').forEach(x => x.classList.toggle('on', x === b)); sync();
-      }));
+      const $ = s => modal.querySelector(s);
       $('#tk-form').addEventListener('submit', e => {
         e.preventDefault();
         C.busy($('#tk-submit'), async () => {
           try {
-            const t = await App.store.createAmfiTicket(ctx.me.id, { keer: f.keer, levering: f.levering, opmerking: $('#tk-opm').value });
+            const t = await App.store.createAmfiTicket(ctx.me.id, { opmerking: $('#tk-opm').value });
             C.modal.close(); C.toast(`Ticket ${nr(t)} aangemaakt — je staat in de wachtrij`); App.go('amfi/' + t.id);
           } catch (ex) { $('#tk-err').textContent = U.friendlyError(ex); }
         });
       });
-      sync();
-    }, { wide: true });
+    });
+  }
+
+  // ---------- afronden: de medewerker bevestigt dat de ruil in-game gebeurd is ----------
+  function finishModal(t, ctx, go) {
+    const q = t.quote;
+    if (!AM.isRuil(t)) {
+      C.modal.open(`<h3>Ticket ${nr(t)} afronden?</h3><p class="muted">Het ticket wordt gesloten.</p>
+        <div class="row-2"><button class="btn ghost" data-modal-close>Terug</button><button class="btn primary" id="fin-ok">${I('check', 14)} Afronden</button></div>`,
+      modal => modal.querySelector('#fin-ok').addEventListener('click', () => { C.modal.close(); go(); }));
+      return;
+    }
+    const checks = [
+      `${U.num(q.amfetamine)} amfetamine ontvangen`,
+      `${fmt(q.wit_geld)} wit geld ontvangen <em>(voor de loods)</em>`,
+      `${fmt(q.zwart_geld)} zwart geld ontvangen`,
+      `${U.num(q.mythisch_klant)} mythische gegeven aan <span class="tcap">${U.esc(t.user_name)}</span>`
+    ];
+    C.modal.open(`
+      <div class="af-head"><span class="af-ic" style="--accent:var(--lime)">${I('check', 18)}</span><div><h3>Ruil afronden — ${nr(t)}</h3><p class="muted small">Vink alles af wat in-game gebeurd is.</p></div></div>
+      <div class="fin-checks">${checks.map((c, i) => `<label class="fin-check"><input type="checkbox" data-fin="${i}"><span>${c}</span></label>`).join('')}</div>
+      <p class="muted small">De loods houdt <b>${U.num(q.mythisch_loods)} mythische</b> + <b>${fmt(q.wit_geld)}</b> wit geld — dat komt op jouw naam in het overzicht van de Boss. ${U.esc(t.user_name)} kan daarna pas na ${U.num(q.cooldown_uur)} uur een nieuw ticket maken.</p>
+      <div class="row-2"><button class="btn ghost" data-modal-close>Terug</button><button class="btn primary" id="fin-ok" disabled>${I('check', 14)} Ruil gedaan</button></div>`, modal => {
+      const boxes = [...modal.querySelectorAll('[data-fin]')], ok = modal.querySelector('#fin-ok');
+      boxes.forEach(b => b.addEventListener('change', () => { ok.disabled = !boxes.every(x => x.checked); }));
+      ok.addEventListener('click', () => { C.modal.close(); go(); });
+    });
   }
 
   // ---------- één ticket ----------
@@ -168,7 +207,7 @@
   function ticketView(ctx, t) {
     const staff = isStaff(ctx), owner = t.user_id === ctx.me.id;
     if (!owner && !staff) return `<a class="auth-back" href="#/amfi">${I('back', 14)} Tickets</a>${C.empty('Je hebt geen toegang tot dit ticket.', 'lock')}`;
-    const pos = AM.position(ctx.state.tickets, t), open = AM.OPEN(t.status), q = t.quote;
+    const pos = AM.position(ctx.state.tickets, t), open = AM.OPEN(t.status), q = t.quote, sm = AM.summary(t);
     return `
       <div class="boss-sec-head" style="--accent:var(--sky);--accent-soft:var(--sky-soft)">
         <a class="auth-back" href="#/amfi">${I('back', 14)} Tickets</a>
@@ -185,22 +224,23 @@
         </section>
         <aside class="tk-side">
           <section class="card">
-            ${C.cardHead('Bestelling', 'flask')}
+            ${C.cardHead(AM.isRuil(t) ? 'Ruil' : 'Bestelling', 'flask')}
             <ul class="qs-facts">
               <li><span>Van</span><b class="tcap">${U.esc(t.user_name)}</b></li>
-              <li><span>Brengt binnen</span><b>${U.num(q.input)} ${q.input_label}</b></li>
-              <li><span>Krijgt</span><b>${U.num(q.output)} ${AM.plural(q.output, q.output_label)}</b></li>
-              <li><span>Ingrediënten</span><b>${AM.LEVERING[t.levering].label}</b></li>
+              <li><span>Brengt binnen</span><b>${U.num(sm.in)} amfetamine</b></li>
+              <li><span>Krijgt</span><b>${U.num(sm.out)} ${sm.label}</b></li>
+              ${AM.isRuil(t) ? '' : `<li><span>Ingrediënten</span><b>${(AM.LEVERING[t.levering] || AM.LEVERING.ruil).label}</b></li>`}
               <li><span>Status</span><b>${t.status === 'wachtrij' ? `plaats ${pos} in de wachtrij` : AM.STATUS[t.status].label}</b></li>
               <li><span>Medewerker</span><b class="tcap">${t.medewerker_naam ? U.esc(t.medewerker_naam) : '—'}</b></li>
               <li><span>Aangemaakt</span><b>${U.ts(t.created_at)}</b></li>
+              ${t.afgerond_at ? `<li><span>Afgerond</span><b>${U.ts(t.afgerond_at)}${t.afgerond_door_naam ? ` · <span class="tcap">${U.esc(t.afgerond_door_naam)}</span>` : ''}</b></li>` : ''}
             </ul>
             ${quoteHtml(q)}
           </section>
           ${open ? `
           <section class="card tk-actions">
             ${staff && t.status === 'wachtrij' ? `<button class="btn sky-btn block" data-claim="${t.id}">${I('check', 15)} Ik help deze persoon</button>` : ''}
-            ${staff && t.status === 'bezig' ? `<button class="btn primary block" data-status="klaar">${I('check', 15)} Ticket afronden</button>
+            ${staff && t.status === 'bezig' ? `<button class="btn primary block" data-status="klaar">${I('check', 15)} ${AM.isRuil(t) ? 'Ruil gedaan — afronden' : 'Ticket afronden'}</button>
               <button class="btn ghost block" data-status="wachtrij">${I('refresh', 14)} Terug in de wachtrij</button>` : ''}
             ${(owner && t.status === 'wachtrij') || staff ? `<button class="btn ghost block danger-text" data-status="geannuleerd">${I('x', 14)} Ticket annuleren</button>` : ''}
           </section>` : ''}
@@ -252,10 +292,11 @@
       root.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => {
         const st = b.dataset.status;
         const go = () => C.busy(b, async () => {
-          try { await App.store.setTicketStatus(t.id, st, actor(ctx)); C.toast({ klaar: 'Ticket afgerond', wachtrij: 'Ticket terug in de wachtrij', geannuleerd: 'Ticket geannuleerd' }[st]); }
+          try { await App.store.setTicketStatus(t.id, st, actor(ctx)); C.toast({ klaar: 'Ruil afgerond', wachtrij: 'Ticket terug in de wachtrij', geannuleerd: 'Ticket geannuleerd' }[st]); }
           catch (ex) { C.toast(U.friendlyError(ex), 'error'); }
         });
-        if (st === 'geannuleerd') {
+        if (st === 'klaar') finishModal(t, ctx, go);
+        else if (st === 'geannuleerd') {
           C.modal.open(`<h3>Ticket ${nr(t)} annuleren?</h3><p class="muted">Het ticket wordt gesloten en verdwijnt uit de wachtrij.</p>
             <div class="row-2"><button class="btn ghost" data-modal-close>Terug</button><button class="btn ghost danger-text" id="cx-ok">${I('x', 14)} Annuleren</button></div>`,
           modal => modal.querySelector('#cx-ok').addEventListener('click', () => { C.modal.close(); go(); }));

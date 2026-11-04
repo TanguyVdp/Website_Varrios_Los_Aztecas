@@ -1,43 +1,84 @@
 /* ============================================================
  * Amfi loods — pure rekenlogica (geen DOM, geen opslag).
- * 1 keer = 1 amfetamine + de ingrediënten  →  1 mythische poeder (waarde € 20.000).
- * - "zelf":  het lid koopt alle ingrediënten zelf → krijgt de boodschappenlijst (× aantal), per winkel.
- * - "wij":   wij kopen alles aan → het lid betaalt een vaste prijs per poeder (standaard € 7.000).
- * Alles hieronder is aanpasbaar door de Boss (Boss menu → Amfi loods); dit zijn enkel de startwaarden.
+ * Vaste ruil per ticket (altijd exact): de klant levert amfetamine + wit geld + zwart geld aan en krijgt
+ * mythische terug; de loods houdt de rest van de mythische + het wit geld. Daarna een cooldown per klant.
+ * Alles staat in App.AMFI.DEFAULT.ruil en is aanpasbaar door de Boss (Boss menu → Amfi loods);
+ * de database (_amfi_ruil in supabase/update-v2-amfi-ruil.sql) gebruikt dezelfde standaardwaarden.
+ * De winkels met prijzen dienen voor de inkoopregistratie: enkel winkels met `inkoop: true` zijn toegelaten.
  * ============================================================ */
 (function (App) {
   const A = {};
   const r2 = n => Math.round(n * 100) / 100;
 
   A.BOT = 'Varrios bot';
-  A.MAX_KEER = 100;                     // max amfetamine per ticket (ook in fn_amfi_create_ticket + App.ERR.TE_VEEL_KEER)
   A.DEFAULT = {
-    input_label: 'amfetamine',          // wat het lid binnenbrengt
-    input_per_keer: 1,
-    output_label: 'mythische poeder',   // wat eruit komt (1 per keer)
-    output_waarde: 20000,               // waarde van 1 poeder (enkel ter info)
-    prijs_wij_per_keer: 7000,           // wat wij vragen per poeder als wij de ingrediënten aankopen
+    ruil: {
+      amfetamine: 50,          // exact zoveel per ticket (niet meer, niet minder)
+      wit_geld: 50000,         // money — gaat naar de loods
+      zwart_geld: 250000,      // black_money
+      mythisch_klant: 47,      // krijgt de klant terug
+      mythisch_loods: 3,       // houdt de loods
+      cooldown_uur: 48         // na het afronden van je ticket
+    },
     winkels: [
-      { naam: 'Groothandel', info: null, producten: [
-        { naam: 'Energy drink', aantal_per_keer: 3, prijs: 5,  zwart: false },
-        { naam: 'Zout',         aantal_per_keer: 5, prijs: 5,  zwart: false },
-        { naam: 'Bloem',        aantal_per_keer: 5, prijs: 5,  zwart: false },
-        { naam: 'IJsblokjes',   aantal_per_keer: 5, prijs: 5,  zwart: false }] },
-      { naam: 'Apotheek', info: null, producten: [
-        { naam: 'Lactose',      aantal_per_keer: 5, prijs: 30, zwart: false },
-        { naam: 'Baking soda',  aantal_per_keer: 5, prijs: 25, zwart: false },
-        { naam: 'Mannitol',     aantal_per_keer: 3, prijs: 80, zwart: false }] },
-      { naam: 'Standaard winkel', info: null, producten: [
-        { naam: 'Wasbenzine',   aantal_per_keer: 6, prijs: 45, zwart: false },
-        { naam: 'Koffiefilters', aantal_per_keer: 5, prijs: 10, zwart: false }] },
-      { naam: 'Lidocaïne-locatie', info: 'Postcode 9141 — de NPC aan de achterkant verkoopt het', producten: [
-        { naam: 'Lidocaïne',    aantal_per_keer: 2, prijs: 2500, zwart: true }] },
-      { naam: 'Cayo eiland', info: null, producten: [
-        { naam: 'Coke bladeren', aantal_per_keer: 3, prijs: null, zwart: false }] }
+      { naam: 'Groothandel', info: null, inkoop: true, producten: [
+        { naam: 'Energy drink', prijs: 5,  zwart: false },
+        { naam: 'Zout',         prijs: 5,  zwart: false },
+        { naam: 'Bloem',        prijs: 5,  zwart: false },
+        { naam: 'IJsblokjes',   prijs: 5,  zwart: false }] },
+      { naam: 'Apotheek', info: null, inkoop: true, producten: [
+        { naam: 'Lactose',      prijs: 30, zwart: false },
+        { naam: 'Baking soda',  prijs: 25, zwart: false },
+        { naam: 'Mannitol',     prijs: 80, zwart: false }] },
+      { naam: 'Standaard winkel', info: null, inkoop: true, producten: [
+        { naam: 'Wasbenzine',   prijs: 45, zwart: false },
+        { naam: 'Koffiefilters', prijs: 10, zwart: false }] },
+      { naam: 'Lidocaïne-locatie', info: 'Postcode 9141 — de NPC aan de achterkant verkoopt het', inkoop: false, producten: [
+        { naam: 'Lidocaïne',    prijs: 2500, zwart: true }] },
+      { naam: 'Cayo eiland', info: null, inkoop: false, producten: [
+        { naam: 'Coke bladeren', prijs: null, zwart: false }] }
     ]
   };
+  // winkels die standaard toegelaten zijn voor de inkoop (voor instellingen van vóór het vinkje)
+  const INKOOP_STD = ['groothandel', 'apotheek', 'standaard winkel'];
+
+  // instellingen aanvullen met de standaardwaarden (oudere instellingen hebben nog geen ruil / inkoop-vinkje)
+  A.settings = s => {
+    s = s || {};
+    return {
+      ...s,
+      ruil: { ...A.DEFAULT.ruil, ...(s.ruil || {}) },
+      winkels: (s.winkels || A.DEFAULT.winkels).map(w => ({ ...w,
+        inkoop: w.inkoop === undefined ? INKOOP_STD.includes(String(w.naam || '').trim().toLowerCase()) : !!w.inkoop }))
+    };
+  };
+
+  // instellingen uit het Boss menu controleren en opkuisen (gooit 'ONGELDIGE_RUIL' / 'ONGELDIGE_PRIJZEN')
+  A.cleanSettings = ({ ruil, winkels }) => {
+    const r = {};
+    Object.keys(A.DEFAULT.ruil).forEach(k => {
+      const v = Number(ruil && ruil[k]);
+      if (!Number.isInteger(v) || v < 0) throw new Error('ONGELDIGE_RUIL');
+      r[k] = v;
+    });
+    if (r.amfetamine <= 0) throw new Error('ONGELDIGE_RUIL');
+    const ws = (winkels || []).map(w => ({ naam: String(w.naam || '').trim().slice(0, 40), info: String(w.info || '').trim().slice(0, 120) || null, inkoop: !!w.inkoop,
+      producten: (w.producten || []).map(p => ({ naam: String(p.naam || '').trim().slice(0, 40), prijs: p.prijs === '' || p.prijs == null ? null : Number(p.prijs), zwart: !!p.zwart })) }));
+    if (ws.some(w => !w.naam || w.producten.some(p => !p.naam || (p.prijs != null && (!Number.isFinite(p.prijs) || p.prijs < 0))))) throw new Error('ONGELDIGE_PRIJZEN');
+    return { ruil: r, winkels: ws };
+  };
+
+  // producten die als inkoop geregistreerd mogen worden: uit toegelaten winkels en met een prijs
+  A.inkoopProducten = s => A.settings(s).winkels.filter(w => w.inkoop)
+    .flatMap(w => (w.producten || []).filter(p => p.naam && p.prijs != null && p.prijs !== '')
+      .map(p => ({ winkel: w.naam, naam: p.naam, prijs: Number(p.prijs), zwart: !!p.zwart })));
+  A.findInkoopProduct = (s, naam) => A.inkoopProducten(s)
+    .find(p => p.naam.trim().toLowerCase() === String(naam || '').trim().toLowerCase()) || null;
+
   A.LEVERING = {
-    zelf: { label: 'Zelf aanleveren', short: 'zelf', icon: 'box',  tone: 'sky' },
+    ruil: { label: 'Ruil',            short: 'ruil',      icon: 'swap', tone: 'sky' },
+    // oud model (tickets van vóór de ruil blijven leesbaar)
+    zelf: { label: 'Zelf aanleveren', short: 'zelf',      icon: 'box',  tone: 'sky' },
     wij:  { label: 'Wij kopen aan',   short: 'wij kopen', icon: 'euro', tone: 'gold' }
   };
   A.STATUS = {
@@ -48,24 +89,24 @@
   };
   A.OPEN = s => s === 'wachtrij' || s === 'bezig';
 
-  // offerte voor een ticket — bij het aanmaken bevroren in het ticket, zodat latere prijswijzigingen niets veranderen
-  A.quote = (s, keer, levering) => {
-    keer = Number(keer) || 0;
-    let wit = 0, zwart = 0;
-    const winkels = s.winkels.map(w => ({ naam: w.naam, info: w.info || null, items: w.producten.map(p => {
-      const aantal = p.aantal_per_keer * keer;
-      const totaal = p.prijs == null ? null : r2(aantal * p.prijs);
-      if (totaal != null) { if (p.zwart) zwart += totaal; else wit += totaal; }
-      return { naam: p.naam, aantal, prijs: p.prijs, zwart: !!p.zwart, totaal };
-    }) })).filter(w => w.items.length);
-    return {
-      keer, levering,
-      input: keer * s.input_per_keer, input_label: s.input_label,
-      output: keer, output_label: s.output_label, output_waarde: r2(keer * s.output_waarde),
-      winkels, kost_wit: r2(wit), kost_zwart: r2(zwart),
-      prijs_per_keer: s.prijs_wij_per_keer,
-      te_betalen: levering === 'wij' ? r2(keer * s.prijs_wij_per_keer) : 0
-    };
+  // offerte voor een ticket — bij het aanmaken bevroren in het ticket (in supabase-modus maakt de database ze)
+  A.quote = s => {
+    const r = A.settings(s).ruil;
+    return { type: 'ruil', keer: r.amfetamine, levering: 'ruil', ...r };
+  };
+  A.isRuil = t => !!(t && t.quote && t.quote.type === 'ruil');
+  // korte samenvatting: wat er binnenkomt en wat de klant terugkrijgt (oude tickets: X amfetamine → X poeders)
+  A.summary = t => A.isRuil(t)
+    ? { in: t.quote.amfetamine, out: t.quote.mythisch_klant, label: 'mythische' }
+    : { in: t.quote.input, out: t.quote.output, label: A.plural(t.quote.output, t.quote.output_label || 'mythische poeder') };
+
+  // cooldown na het afronden van je laatste ticket: het moment waarop je weer een ticket mag maken, of null
+  A.cooldownUntil = (tickets, userId, s, now = Date.now()) => {
+    const last = tickets.filter(t => t.user_id === userId && t.status === 'klaar' && t.afgerond_at)
+      .reduce((m, t) => Math.max(m, new Date(t.afgerond_at).getTime()), 0);
+    if (!last) return null;
+    const until = last + A.settings(s).ruil.cooldown_uur * 3600000;
+    return until > now ? new Date(until) : null;
   };
 
   // plaats in de wachtrij (1 = eerstvolgende), 0 als het ticket niet (meer) in de wachtrij staat
@@ -83,6 +124,41 @@
   A.mine = (tickets, userId) => tickets.filter(t => A.OPEN(t.status) && (t.user_id === userId || t.medewerker_id === userId));
   A.unreadFor = (tickets, userId) => A.mine(tickets, userId).reduce((n, t) => n + A.unread(t, userId), 0);
 
+  // ---------- boss-overzicht ----------
+  // per medewerker: geholpen (afgeronde tickets), wat de ruil opbracht en wat hij/zij voor de loods kocht
+  A.overzicht = (tickets, inkoop) => {
+    const per = new Map();
+    const row = (id, naam) => {
+      const k = id || 'naam:' + naam;
+      if (!per.has(k)) per.set(k, { user_id: id || null, naam, geholpen: 0, wit_geld: 0, zwart_geld: 0, mythisch_loods: 0, amfetamine: 0, kost: 0, kost_zwart: 0 });
+      return per.get(k);
+    };
+    const tot = { geholpen: 0, wit_geld: 0, zwart_geld: 0, mythisch_loods: 0, mythisch_klant: 0, amfetamine: 0, kost: 0, kost_zwart: 0 };
+    tickets.filter(t => t.status === 'klaar').forEach(t => {
+      const r = row(t.afgerond_door_id || t.medewerker_id, t.afgerond_door_naam || t.medewerker_naam || 'onbekend');
+      r.geholpen++; tot.geholpen++;
+      ['wit_geld', 'zwart_geld', 'mythisch_loods', 'amfetamine'].forEach(k => { const v = Number(t[k] || 0); r[k] += v; tot[k] += v; });
+      tot.mythisch_klant += Number(t.mythisch_klant || 0);
+    });
+    (inkoop || []).forEach(i => {
+      const r = row(i.user_id, i.user_name), v = Number(i.totaal || 0);
+      if (i.zwart) { r.kost_zwart = r2(r.kost_zwart + v); tot.kost_zwart = r2(tot.kost_zwart + v); }
+      else { r.kost = r2(r.kost + v); tot.kost = r2(tot.kost + v); }
+    });
+    return { rows: [...per.values()].sort((a, b) => b.geholpen - a.geholpen || (b.kost + b.kost_zwart) - (a.kost + a.kost_zwart)), tot };
+  };
+  // voorraad die in de loods gelegd is: totaal per product
+  A.voorraad = inkoop => {
+    const m = new Map();
+    (inkoop || []).forEach(i => {
+      const k = i.product.toLowerCase();
+      const r = m.get(k) || { product: i.product, winkel: i.winkel, aantal: 0, totaal: 0 };
+      r.aantal += Number(i.aantal || 0); r.totaal = r2(r.totaal + Number(i.totaal || 0));
+      m.set(k, r);
+    });
+    return [...m.values()].sort((a, b) => a.winkel.localeCompare(b.winkel) || a.product.localeCompare(b.product));
+  };
+
   const num = n => Number(n || 0).toLocaleString('nl-BE');
   const eur = n => '€ ' + Number(n || 0).toLocaleString('nl-BE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   A.eur = eur;
@@ -90,22 +166,16 @@
 
   // eerste bericht van de bot in een nieuw ticket
   A.intro = (t, pos) => {
-    const q = t.quote, L = [];
-    L.push(`Hey ${t.user_name}! Ticket #${String(t.nr).padStart(3, '0')} staat in de wachtrij — je bent nummer ${pos}.`);
-    L.push(`Bestelling: ${num(q.input)} ${q.input_label} → ${num(q.output)} ${A.plural(q.output, q.output_label)} (waarde ${eur(q.output_waarde)}).`);
-    if (q.levering === 'zelf') {
-      L.push('', `Jij levert alles zelf aan. Breng ${num(q.input)} ${q.input_label} mee en koop dit:`);
-      q.winkels.forEach(w => {
-        L.push('', `${w.naam}${w.info ? ` (${w.info})` : ''}:`);
-        w.items.forEach(p => L.push(`• ${num(p.aantal)}× ${p.naam}${p.prijs != null ? ` — ${eur(p.prijs)}${p.zwart ? ' zwart' : ''} p.s.` : ''}`));
-      });
-      L.push('', `Geschatte kost: ${eur(q.kost_wit)}${q.kost_zwart ? ` + ${eur(q.kost_zwart)} zwart geld` : ''}.`);
-    } else {
-      L.push('', `Wij kopen alle ingrediënten voor jou aan. Breng ${num(q.input)} ${q.input_label} mee.`);
-      L.push(`Te betalen: ${num(q.output)} × ${eur(q.prijs_per_keer)} = ${eur(q.te_betalen)}`);
-    }
-    L.push('', 'Een medewerker neemt zo snel mogelijk contact met je op in dit ticket.');
-    return L.join('\n');
+    const q = t.quote;
+    return [
+      `Hey ${t.user_name}! Ticket #${String(t.nr).padStart(3, '0')} staat in de wachtrij — je bent nummer ${pos}.`,
+      '', 'Breng dit mee naar de loods:',
+      `• ${num(q.amfetamine)} amfetamine`,
+      `• ${eur(q.wit_geld)} wit geld`,
+      `• ${eur(q.zwart_geld)} zwart geld`,
+      '', `Je krijgt ${num(q.mythisch_klant)} mythische terug.`,
+      '', 'Een medewerker neemt zo snel mogelijk contact met je op in dit ticket.'
+    ].join('\n');
   };
 
   App.AMFI = A;
