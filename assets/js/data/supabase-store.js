@@ -392,6 +392,22 @@
       await rpc('fn_amfi_delete_inkoop', { p_id: id });
       await after(['inkoop']);
     },
+    async editAmfiInkoop(id, { user_id, aantal, prijs, note }) {
+      aantal = Number(aantal); prijs = Number(prijs);
+      if (!Number.isInteger(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
+      if (!Number.isFinite(prijs) || prijs < 0) throw E('ONGELDIGE_PRIJS');
+      await rpc('fn_amfi_edit_inkoop', { p_id: id, p_user_id: user_id, p_aantal: aantal, p_prijs: prijs, p_note: note || null });
+      await after(['inkoop']);
+    },
+    async amfiInkoopUitbetaald(userId, door) {
+      const n = await rpc('fn_amfi_inkoop_uitbetaald', { p_user_id: userId || null, p_door: door });
+      await after(['inkoop']);
+      return n;
+    },
+    async amfiInkoopTerug(id) {
+      await rpc('fn_amfi_inkoop_terug', { p_id: id });
+      await after(['inkoop']);
+    },
 
     // ---- agenda ----
     async setRsvp(eventId, userId, status, reden) {

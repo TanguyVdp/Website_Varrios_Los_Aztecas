@@ -125,6 +125,9 @@
   A.unreadFor = (tickets, userId) => A.mine(tickets, userId).reduce((n, t) => n + A.unread(t, userId), 0);
 
   // ---------- boss-overzicht ----------
+  // inkoop: open = nog niet uitbetaald (telt mee in kosten en voorraad); na "uitbetaald" begint alles opnieuw vanaf 0
+  A.open = inkoop => (inkoop || []).filter(i => !i.uitbetaald_at);
+  A.paid = inkoop => (inkoop || []).filter(i => i.uitbetaald_at);
   // per medewerker: geholpen (afgeronde tickets), wat de ruil opbracht en wat hij/zij voor de loods kocht
   A.overzicht = (tickets, inkoop) => {
     const per = new Map();
@@ -140,7 +143,7 @@
       ['wit_geld', 'zwart_geld', 'mythisch_loods', 'amfetamine'].forEach(k => { const v = Number(t[k] || 0); r[k] += v; tot[k] += v; });
       tot.mythisch_klant += Number(t.mythisch_klant || 0);
     });
-    (inkoop || []).forEach(i => {
+    A.open(inkoop).forEach(i => {
       const r = row(i.user_id, i.user_name), v = Number(i.totaal || 0);
       if (i.zwart) { r.kost_zwart = r2(r.kost_zwart + v); tot.kost_zwart = r2(tot.kost_zwart + v); }
       else { r.kost = r2(r.kost + v); tot.kost = r2(tot.kost + v); }
@@ -150,7 +153,7 @@
   // voorraad die in de loods gelegd is: totaal per product
   A.voorraad = inkoop => {
     const m = new Map();
-    (inkoop || []).forEach(i => {
+    A.open(inkoop).forEach(i => {
       const k = i.product.toLowerCase();
       const r = m.get(k) || { product: i.product, winkel: i.winkel, aantal: 0, totaal: 0 };
       r.aantal += Number(i.aantal || 0); r.totaal = r2(r.totaal + Number(i.totaal || 0));

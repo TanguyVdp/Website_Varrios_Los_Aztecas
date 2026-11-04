@@ -589,6 +589,33 @@
       if (i < 0) throw E('NIET_GEVONDEN');
       state.amfiInkoop.splice(i, 1); commit();
     },
+    // aanpassen (zoals fn_amfi_edit_inkoop): wie, aantal (0 mag), prijs per stuk, opmerking
+    async editAmfiInkoop(id, { user_id, aantal, prijs, note }) {
+      await latency();
+      const i = state.amfiInkoop.find(x => x.id === id);
+      if (!i) throw E('NIET_GEVONDEN');
+      const u = userById(user_id);
+      aantal = Number(aantal); prijs = Number(prijs);
+      if (!Number.isInteger(aantal) || aantal < 0) throw E('ONGELDIG_AANTAL');
+      if (!Number.isFinite(prijs) || prijs < 0) throw E('ONGELDIGE_PRIJS');
+      Object.assign(i, { user_id: u.id, user_name: u.name, aantal, prijs, totaal: Math.round(aantal * prijs * 100) / 100,
+        note: String(note || '').trim().slice(0, 120) || null });
+      commit();
+    },
+    // uitbetaald: per medewerker (userId) of alles (null) — telt daarna niet meer mee, blijft in het archief
+    async amfiInkoopUitbetaald(userId, door) {
+      await latency();
+      const now = iso(Date.now());
+      let n = 0;
+      state.amfiInkoop.forEach(i => { if (!i.uitbetaald_at && (!userId || i.user_id === userId)) { i.uitbetaald_at = now; i.uitbetaald_door = door; n++; } });
+      commit(); return n;
+    },
+    async amfiInkoopTerug(id) {
+      await latency();
+      const i = state.amfiInkoop.find(x => x.id === id);
+      if (!i) throw E('NIET_GEVONDEN');
+      i.uitbetaald_at = null; i.uitbetaald_door = null; commit();
+    },
 
     // ---- agenda: aanmelden (later: tabel event_rsvps + fn_set_rsvp) ----
     async setRsvp(eventId, userId, status, reden) {

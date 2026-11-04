@@ -1367,3 +1367,4 @@ button.chk:hover { border-color: var(--accent, var(--sky)); }
 /* werken als gangpot (Boss): knop rechtsboven om terug te schakelen */
 .status.act-gp { cursor: pointer; white-space: nowrap; color: var(--gold); background: var(--gold-soft); border-color: rgba(244,180,26,.35); font-weight: 600; }
 .status.act-gp:hover { filter: brightness(1.12); }
+.ink-acts { display: inline-flex; gap: 4px; justify-content: flex-end; }
