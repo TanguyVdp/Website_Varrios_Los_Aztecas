@@ -131,7 +131,7 @@ App.RANKS = [
   { id: 'coordinator', label: 'Coördinator', icon: 'gear' },
   { id: 'veteraan',    label: 'Veteraan',    icon: 'headset' },
   { id: 'broeder',     label: 'Broeder',     icon: 'chevronStar' },
-  { id: 'lid',         label: 'Lid',         icon: 'chevronStar' },
+  { id: 'lid',         label: 'Lid',         icon: 'chevronOne' },
   { id: 'koerier',     label: 'Koerier',     icon: 'mail' }
 ];
 // oude rang-ids (eerste versie) → nieuwe
