@@ -5,9 +5,11 @@
 //  1. Nieuwe activiteit in de agenda → bericht in het agenda-kanaal met knoppen
 //     (✅ Aanwezig / 🤔 Misschien / ❌ Afwezig + link naar de site).
 //  2. Houdt dat bericht bij: wie wat geantwoord heeft (ook antwoorden via de site).
-//  3. Herinnering per DM, 24u en 2u voor de start, aan wie nog niet geantwoord heeft
-//     (wie die dag als afwezig gemeld staat, wordt overgeslagen). DM's die niet lukken
-//     (DM's uitgeschakeld) → één vermelding in het kanaal.
+//  3. Herinneringen als tag in het agenda-kanaal (geen DM's meer):
+//     - 5u voor de start: wie nog niet geantwoord heeft (wie die dag als afwezig gemeld staat, wordt overgeslagen)
+//     - 2u voor de start: wie "aanwezig" antwoordde ("@bob @mike — Wapenveiling begint over 2 uur")
+//     Bijgehouden in agenda_pings: wie intussen antwoordt (of niet meer aanwezig is) gaat eruit zonder opnieuw
+//     getagd te worden; activiteit verwijderd → bericht weg. Vereist supabase/update-v2-agenda-tags.sql.
 //  4. Activiteit begonnen → knoppen uit; 12u na de start → bericht weg uit het kanaal. Activiteit verwijderd → bericht op "geannuleerd".
 //     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
@@ -130,43 +132,61 @@ const msgSig = msg => JSON.stringify([msg.embeds[0].fields, msg.embeds[0].footer
 const dkey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 // zonder uur rekenen we met 12u00
 const startOf = ev => new Date(`${ev.datum}T${ev.tijd || '12:00'}:00`);
-const whenText = ev => `${dayLabel(ev.datum)}${ev.tijd ? ` om ${ev.tijd}` : ''}`;
 
-async function remind(ev, hours, rsvps, members, absences) {
-  const answered = new Set(rsvps.filter(r => r.event_id === ev.id).map(r => r.user_id));
-  const absent = new Set(absences.filter(a => a.van <= ev.datum && a.tot >= ev.datum).map(a => a.user_id));
-  const targets = members.filter(u => u.discord_id && !answered.has(u.id) && !absent.has(u.id));
-  const failed = [];
-  const msg = buildMessage(ev, rsvps, members);
-  const content = `⏰ **Herinnering:** "${ev.titel}" begint ${hours === 24 ? '**morgen**' : '**binnen 2 uur**'} (${whenText(ev)}).\nJe hebt nog niet laten weten of je erbij bent — klik hieronder.`;
-  for (const u of targets) {
-    try {
-      const dm = await discord('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
-      await discord(`/channels/${dm.id}/messages`, 'POST', { content, ...msg });
-      console.log(`  DM (${hours}u) → ${u.name}`);
-    } catch (e) {
-      console.log(`  DM (${hours}u) aan ${u.name} lukte niet: ${e.message}`);
-      failed.push(u);
-    }
+// herinneringen: [kolom in agenda_discord, uren voor de start, wie getagd wordt]
+const REMINDERS = [['reminded_5', 5, 'open'], ['reminded_2', 2, 'aanwezig']];
+
+// wie getagd wordt bij een herinnering: 'open' = nog niet geantwoord (en die dag niet afwezig gemeld),
+// 'aanwezig' = antwoordde "aanwezig"
+function remindTargets(ev, kind, rsvps, members, absences) {
+  const mine = rsvps.filter(r => r.event_id === ev.id);
+  if (kind === 'aanwezig') {
+    const yes = new Set(mine.filter(r => r.status === 'aanwezig').map(r => r.user_id));
+    return members.filter(u => yes.has(u.id));
   }
-  if (failed.length) {
-    const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', {
-      content: pingText(ev, hours, failed.map(u => u.discord_id)),
-      allowed_mentions: { users: failed.map(u => u.discord_id) }
-    });
-    // onthouden, zodat de bot het bericht kan inkorten/weghalen zodra ze antwoorden (tabel agenda_pings)
-    try {
-      await sbInsert('agenda_pings', { message_id: sent.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, event_id: ev.id, hours,
-        users: failed.map(u => ({ id: u.id, discord_id: u.discord_id })) });
-    } catch (e) { console.log(`  agenda_pings bijhouden lukte niet: ${e.message}`); }
+  const answered = new Set(mine.map(r => r.user_id));
+  const absent = new Set(absences.filter(a => a.van <= ev.datum && a.tot >= ev.datum).map(a => a.user_id));
+  return members.filter(u => !answered.has(u.id) && !absent.has(u.id));
+}
+
+// tag in het agenda-kanaal; wie (nog) geen Discord-ID heeft, staat er met naam
+const tags = list => list.map(u => u.discord_id ? `<@${u.discord_id}>` : `**${u.name || '?'}**`).join(' ');
+const overText = hours => hours === 24 ? 'morgen' : `over ${hours} uur`;
+const pingText = (ev, kind, hours, list) => kind === 'aanwezig'
+  ? `🔔 ${tags(list)} — **${ev.titel}** begint ${overText(hours)}${ev.tijd ? ` (om ${ev.tijd})` : ''}. Tot straks!`
+  : `⏰ ${tags(list)} — **${ev.titel}** begint ${overText(hours)}${ev.tijd ? ` (om ${ev.tijd})` : ''} en ${list.length === 1 ? 'je hebt' : 'jullie hebben'} nog niet geantwoord. Klik op een knop in het agenda-bericht of op de site.`;
+
+async function remind(ev, kind, hours, rsvps, members, absences) {
+  const list = remindTargets(ev, kind, rsvps, members, absences);
+  if (!list.length) { console.log(`  niemand te taggen (${kind})`); return; }
+  const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', {
+    content: pingText(ev, kind, hours, list),
+    allowed_mentions: { users: list.map(u => u.discord_id).filter(Boolean) }
+  });
+  console.log(`  getagd (${kind}, ${hours}u): ${list.map(u => u.name).join(', ')}`);
+  // onthouden, zodat de bot het bericht kan inkorten/weghalen (tabel agenda_pings)
+  try {
+    await sbInsert('agenda_pings', { message_id: sent.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, event_id: ev.id, hours, kind,
+      users: list.map(u => ({ id: u.id, name: u.name, discord_id: u.discord_id || null })) });
+  } catch (e) { console.log(`  agenda_pings bijhouden lukte niet: ${e.message}`); }
+}
+
+// bestaan de kolommen van supabase/update-v2-agenda-tags.sql al? Zo niet: geen herinneringen (ook geen DM's)
+async function remindersReady() {
+  try {
+    await sb('agenda_discord?select=reminded_5&limit=1');
+    await sb('agenda_pings?select=kind&limit=1');
+    return true;
+  } catch (e) {
+    console.log('Herinneringen overgeslagen: voer eerst supabase/update-v2-agenda-tags.sql uit in Supabase.');
+    return false;
   }
 }
 
-// vermelding in het kanaal voor wie geen DM kon krijgen
-const pingText = (ev, hours, discordIds) => `⏰ ${discordIds.map(id => `<@${id}>`).join(' ')} — "${ev.titel}" begint ${hours === 24 ? 'morgen' : 'binnen 2 uur'} en ${discordIds.length === 1 ? 'je hebt' : 'jullie hebben'} nog niet geantwoord. Klik op een knop in het bericht hierboven of op de site.`;
-
-// vermeldingen opruimen: wie intussen antwoordde gaat eruit (zonder opnieuw te taggen); iedereen geantwoord,
-// activiteit begonnen of verwijderd → bericht weg
+// tags opruimen (zonder opnieuw te taggen):
+//  - 'open': wie intussen antwoordde gaat eruit; iedereen geantwoord of activiteit begonnen → bericht weg
+//  - 'aanwezig': wie niet meer "aanwezig" staat gaat eruit; niemand meer over of 12u na de start → bericht weg
+//  - activiteit verwijderd → altijd weg
 async function cleanPings(rsvps, now) {
   let pings;
   try { pings = await sb('agenda_pings?select=*'); } catch (e) { return; }   // tabel bestaat nog niet
@@ -175,17 +195,21 @@ async function cleanPings(rsvps, now) {
   const evById = new Map(evs.map(e => [e.id, e]));
   for (const p of pings) {
     const ev = evById.get(p.event_id);
-    const answered = new Set(rsvps.filter(r => r.event_id === p.event_id).map(r => r.user_id));
-    const left = (p.users || []).filter(u => !answered.has(u.id));
+    const kind = p.kind || 'open';
+    const mine = rsvps.filter(r => r.event_id === p.event_id);
+    const left = (p.users || []).filter(u => kind === 'aanwezig'
+      ? mine.some(r => r.user_id === u.id && r.status === 'aanwezig')
+      : !mine.some(r => r.user_id === u.id));
+    const over = ev && (kind === 'aanwezig' ? now - startOf(ev) >= 12 * HOUR : now >= startOf(ev));
     try {
-      if (!ev || now >= startOf(ev) || !left.length) {
+      if (!ev || over || !left.length) {
         try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
         catch (e) { if (e.status !== 404) throw e; }
         await sbDelete('agenda_pings', `message_id=eq.${p.message_id}`);
         console.log(`Vermelding weggehaald: ${ev ? ev.titel : p.event_id}`);
       } else if (left.length < (p.users || []).length) {
         await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', {
-          content: pingText(ev, p.hours, left.map(u => u.discord_id)), allowed_mentions: { parse: [] }
+          content: pingText(ev, kind, p.hours, left), allowed_mentions: { parse: [] }
         });
         await sbUpdate('agenda_pings', `message_id=eq.${p.message_id}`, { users: left });
         console.log(`Vermelding ingekort (${left.length} over): ${ev.titel}`);
@@ -206,6 +230,7 @@ async function main() {
     sb('agenda_discord?select=*')
   ]);
   const members = users.filter(u => u.name.trim().toLowerCase() !== 'gangpot');
+  const canRemind = await remindersReady();
   const byEvent = new Map(posts.map(p => [p.event_id, p]));
   const eventIds = new Set(events.map(e => e.id));
 
@@ -250,9 +275,9 @@ async function main() {
       const msg = buildMessage(ev, rsvps, members);
       const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', { content: '📅 **Nieuwe activiteit in de agenda!**', ...msg });
       const left = start - now;
-      post = { event_id: ev.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, message_id: sent.id, counts: msgSig(msg),
-        // net geplaatst: geen herinnering voor een moment dat al voorbij is
-        reminded_24: left < 24 * HOUR, reminded_2: left < 2 * HOUR, closed: false };
+      post = { event_id: ev.id, channel_id: DISCORD_AGENDA_CHANNEL_ID, message_id: sent.id, counts: msgSig(msg), closed: false };
+      // net geplaatst: geen herinnering voor een moment dat al voorbij is
+      if (canRemind) for (const [key, hours] of REMINDERS) post[key] = left < hours * HOUR;
       await sbInsert('agenda_discord', post);
       console.log(`Gepost: ${ev.titel} (${ev.datum})`);
       continue;
@@ -283,13 +308,15 @@ async function main() {
       }
     }
 
-    // herinneringen
-    for (const [key, hours] of [['reminded_24', 24], ['reminded_2', 2]]) {
+    // herinneringen (tags in het agenda-kanaal)
+    for (const [key, hours, kind] of canRemind ? REMINDERS : []) {
       if (post[key] || now < start - hours * HOUR) continue;
       await sbUpdate('agenda_discord', `event_id=eq.${ev.id}`, { [key]: true });   // eerst markeren: nooit dubbel
       post[key] = true;
-      console.log(`Herinnering ${hours}u: ${ev.titel}`);
-      await remind(ev, hours, rsvps, members, absences);
+      // werkelijke tijd tot de start (de bot draait om de paar minuten, of stond even stil)
+      const left = Math.max(1, Math.round((start - now) / HOUR));
+      console.log(`Herinnering ${hours}u (${kind}): ${ev.titel}`);
+      await remind(ev, kind, Math.min(hours, left), rsvps, members, absences);
     }
   }
 

@@ -119,13 +119,13 @@ App.ACCESS = [
 ];
 App.ACCESS_DEFAULT = { wiet: true, opslag: false, amfi: false, boss: false };   // voor nieuwe profielen
 
-// Rangen van Varrios Los Aztecas (volgorde = hoog → laag). lead = leiding (goud gevuld weergegeven).
+// Rangen van Varrios Los Aztecas (volgorde = hoog → laag). lead = leiding (goud gevuld weergegeven), gold = enkel goud weergegeven.
 // icon = naam uit core/icons.js. De Boss kiest per lid een rang in Boss menu → Ledenlijst.
 App.RANKS = [
   { id: 'oprichter',   label: 'Oprichter',   icon: 'crown',      lead: true },
   { id: 'kolonel',     label: 'Kolonel',     icon: 'chevrons',   lead: true },
   { id: 'generaal',    label: 'Generaal',    icon: 'starLaurel', lead: true },
-  { id: 'adviseur',    label: 'Adviseur',    icon: 'eagle' },
+  { id: 'adviseur',    label: 'Adviseur',    icon: 'eagle',      gold: true },
   { id: 'kapitein',    label: 'Kapitein',    icon: 'shieldStar' },
   { id: 'strateeg',    label: 'Strateeg',    icon: 'compass' },
   { id: 'coordinator', label: 'Coördinator', icon: 'gear' },

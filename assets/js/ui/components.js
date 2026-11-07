@@ -38,7 +38,7 @@
 
   C.rank = (user, sm) => {
     const r = user && user.rank && App.RANKS.find(x => x.id === user.rank);
-    return r ? `<span class="rank-pill ${sm ? 'sm' : ''} ${r.lead ? 'lead' : ''}" title="${r.label}${r.lead ? ' · Lead' : ''}">${I(r.icon, sm ? 10 : 12)}${r.label}</span>` : '';
+    return r ? `<span class="rank-pill ${sm ? 'sm' : ''} ${r.lead || r.gold ? 'lead' : ''}" title="${r.label}${r.lead ? ' · Lead' : ''}">${I(r.icon, sm ? 10 : 12)}${r.label}</span>` : '';
   };
   C.dot = name => `<span class="pdot" style="--c:${U.personColor(name)}"></span>`;
 

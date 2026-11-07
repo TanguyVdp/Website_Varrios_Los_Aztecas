@@ -269,7 +269,7 @@
       </section>`;
   }
 
-  const rankBtn = (r, cur) => `<button type="button" class="reason rank-opt ${r.lead ? 'lead' : ''} ${cur === r.id ? 'on' : ''}" data-rank="${r.id}">${I(r.icon, 14)}${r.label}</button>`;
+  const rankBtn = (r, cur) => `<button type="button" class="reason rank-opt ${r.lead || r.gold ? 'lead' : ''} ${cur === r.id ? 'on' : ''}" data-rank="${r.id}">${I(r.icon, 14)}${r.label}</button>`;
   const rankPicker = cur => `
     <div class="rank-group"><span class="rank-group-label">★ Lead</span><div class="rank-opts">${App.RANKS.filter(r => r.lead).map(r => rankBtn(r, cur)).join('')}</div></div>
     <div class="rank-group"><div class="rank-opts">${App.RANKS.filter(r => !r.lead).map(r => rankBtn(r, cur)).join('')}<button type="button" class="reason rank-opt ${cur ? '' : 'on'}" data-rank="">Geen</button></div></div>`;

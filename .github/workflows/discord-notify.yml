@@ -32,7 +32,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node .github/scripts/discord-notify.mjs
 
-      # agenda-bot: nieuwe activiteiten posten, antwoorden bijhouden, herinneringen (24u/2u) per DM
+      # agenda-bot: nieuwe activiteiten posten, antwoorden bijhouden, herinneringen als tag in het agenda-kanaal (5u: geen antwoord, 2u: aanwezig)
       # (doet niets zolang de secrets niet ingesteld zijn; een fout hier stopt de zakjes-melding niet)
       - name: Agenda-bot (Discord)
         continue-on-error: true
