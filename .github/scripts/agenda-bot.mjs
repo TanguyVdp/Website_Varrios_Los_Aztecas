@@ -6,7 +6,8 @@
 //     (✅ Aanwezig / 🤔 Misschien / ❌ Afwezig + link naar de site).
 //  2. Houdt dat bericht bij: wie wat geantwoord heeft (ook antwoorden via de site).
 //  3. Herinneringen als tag in het agenda-kanaal (geen DM's meer):
-//     - 5u voor de start: wie nog niet geantwoord heeft (wie die dag als afwezig gemeld staat, wordt overgeslagen)
+//     - 24u en 5u voor de start: wie nog niet geantwoord heeft (wie die dag als afwezig gemeld staat, wordt overgeslagen);
+//       de 5u-tag vervangt de 24u-tag
 //     - 2u voor de start: wie "aanwezig" antwoordde ("@bob @mike — Wapenveiling begint over 2 uur")
 //     Bijgehouden in agenda_pings: wie intussen antwoordt (of niet meer aanwezig is) gaat eruit zonder opnieuw
 //     getagd te worden; activiteit verwijderd → bericht weg. Vereist supabase/update-v2-agenda-tags.sql.
@@ -134,7 +135,7 @@ const dkey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0'
 const startOf = ev => new Date(`${ev.datum}T${ev.tijd || '12:00'}:00`);
 
 // herinneringen: [kolom in agenda_discord, uren voor de start, wie getagd wordt]
-const REMINDERS = [['reminded_5', 5, 'open'], ['reminded_2', 2, 'aanwezig']];
+const REMINDERS = [['reminded_24', 24, 'open'], ['reminded_5', 5, 'open'], ['reminded_2', 2, 'aanwezig']];
 
 // wie getagd wordt bij een herinnering: 'open' = nog niet geantwoord (en die dag niet afwezig gemeld),
 // 'aanwezig' = antwoordde "aanwezig"
@@ -184,7 +185,7 @@ async function remindersReady() {
 }
 
 // tags opruimen (zonder opnieuw te taggen):
-//  - 'open': wie intussen antwoordde gaat eruit; iedereen geantwoord of activiteit begonnen → bericht weg
+//  - 'open': wie intussen antwoordde gaat eruit; iedereen geantwoord, activiteit begonnen of een nieuwere tag (5u na 24u) → bericht weg
 //  - 'aanwezig': wie niet meer "aanwezig" staat gaat eruit; niemand meer over of 12u na de start → bericht weg
 //  - activiteit verwijderd → altijd weg
 async function cleanPings(rsvps, now) {
@@ -201,8 +202,9 @@ async function cleanPings(rsvps, now) {
       ? mine.some(r => r.user_id === u.id && r.status === 'aanwezig')
       : !mine.some(r => r.user_id === u.id));
     const over = ev && (kind === 'aanwezig' ? now - startOf(ev) >= 12 * HOUR : now >= startOf(ev));
+    const replaced = kind === 'open' && pings.some(q => q.event_id === p.event_id && (q.kind || 'open') === 'open' && BigInt(q.message_id) > BigInt(p.message_id));
     try {
-      if (!ev || over || !left.length) {
+      if (!ev || over || replaced || !left.length) {
         try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
         catch (e) { if (e.status !== 404) throw e; }
         await sbDelete('agenda_pings', `message_id=eq.${p.message_id}`);
@@ -313,6 +315,9 @@ async function main() {
       if (post[key] || now < start - hours * HOUR) continue;
       await sbUpdate('agenda_discord', `event_id=eq.${ev.id}`, { [key]: true });   // eerst markeren: nooit dubbel
       post[key] = true;
+      // niet sturen als dit moment al voorbij was bij het plaatsen, of als de volgende herinnering van dezelfde soort ook al aan de beurt is
+      const nextDue = REMINDERS.some(([, h, k]) => k === kind && h < hours && now >= start - h * HOUR);
+      if (nextDue || new Date(post.posted_at).getTime() > start.getTime() - hours * HOUR) continue;
       // werkelijke tijd tot de start (de bot draait om de paar minuten, of stond even stil)
       const left = Math.max(1, Math.round((start - now) / HOUR));
       console.log(`Herinnering ${hours}u (${kind}): ${ev.titel}`);
