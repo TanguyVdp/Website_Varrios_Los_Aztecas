@@ -16,6 +16,7 @@
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
 //     mededeling gewijzigd → bericht bijgewerkt; verwijderd op de site (uit de lobby) → het bericht BLIJFT in Discord.
+//  6. Amfi-tickets → één bericht per ticket in het lead-kanaal (DISCORD_AMFI_CHANNEL_ID), bijgewerkt als de status verandert.
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -24,7 +25,7 @@
 // buildMessage() is een kopie van die in de Edge Function — hou ze gelijk.
 // ============================================================
 
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID, DISCORD_MEDEDELINGEN_CHANNEL_ID } = process.env;
+const { SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID, DISCORD_MEDEDELINGEN_CHANNEL_ID, DISCORD_AMFI_CHANNEL_ID } = process.env;
 const SITE_URL = (process.env.SITE_URL || 'https://tanguyvdp.github.io/Website_Varrios_Los_Aztecas/').replace(/\/?$/, '/');
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !DISCORD_BOT_TOKEN || !DISCORD_AGENDA_CHANNEL_ID) {
   console.log('Agenda-bot nog niet ingesteld (secrets ontbreken) — overgeslagen.');
@@ -426,7 +427,60 @@ async function notices() {
   }
 }
 
-// agenda en mededelingen los van elkaar: een fout in het ene stopt het andere niet
-const results = await Promise.allSettled([main(), notices()]);
+// ---------- amfi-tickets: melding in het lead-kanaal ----------
+// Eén bericht per ticket, dat wordt bijgewerkt als de status verandert. Bijgehouden in amfi_discord.
+const AMFI_STATUS = {
+  wachtrij:    { label: 'In wachtrij',    emoji: '🕓', color: 0x38bdf8 },
+  bezig:       { label: 'In behandeling', emoji: '🛠️', color: 0xf0b24e },
+  klaar:       { label: 'Afgerond',       emoji: '✅', color: 0x9be15d },
+  geannuleerd: { label: 'Geannuleerd',    emoji: '❌', color: 0x6b7280 }
+};
+function amfiMessage(t) {
+  const s = AMFI_STATUS[t.status] || AMFI_STATUS.wachtrij;
+  const aantal = (t.quote && t.quote.amfetamine) || t.keer;
+  const door = t.status === 'bezig' ? t.medewerker_naam : t.status === 'klaar' ? (t.afgerond_door_naam || t.medewerker_naam) : null;
+  return {
+    allowed_mentions: { parse: [] },
+    embeds: [{
+      title: `Amfi ticket #${String(t.nr).padStart(3, '0')}`,
+      url: `${SITE_URL}#/amfi/${t.id}`,
+      description: `**${t.user_name}** heeft een ticket aangemaakt om **${aantal} amfetamine** om te zetten.\n\n**Status:** ${s.emoji} ${s.label}${door ? ` — ${door}` : ''}`,
+      color: s.color
+    }]
+  };
+}
+
+async function amfi() {
+  if (!DISCORD_AMFI_CHANNEL_ID) { console.log('Geen amfi-kanaal ingesteld — overgeslagen.'); return; }
+  let posts;
+  try { posts = await sb('amfi_discord?select=*'); }
+  catch (e) { console.log('Amfi-meldingen overgeslagen: voer eerst supabase/update-v2-amfi-discord.sql uit in Supabase.'); return; }
+  const tickets = await sb('amfi_tickets?select=id,nr,user_name,keer,quote,status,medewerker_naam,afgerond_door_naam,created_at&order=created_at.asc');
+  const byTicket = new Map(posts.map(p => [p.ticket_id, p]));
+  const since = Date.now() - 24 * HOUR;
+  for (const t of tickets) {
+    const msg = amfiMessage(t), sig = msg.embeds[0].description, post = byTicket.get(t.id);
+    if (!post) {
+      // nieuw → posten (enkel van de laatste 24u, zodat oude tickets er niet ineens allemaal in komen)
+      if (new Date(t.created_at).getTime() < since) continue;
+      const sent = await discord(`/channels/${DISCORD_AMFI_CHANNEL_ID}/messages`, 'POST', msg);
+      await sbInsert('amfi_discord', { ticket_id: t.id, channel_id: DISCORD_AMFI_CHANNEL_ID, message_id: sent.id, sig });
+      console.log(`Amfi ticket gepost: #${t.nr} (${t.status})`);
+    } else if (post.sig !== sig) {
+      try {
+        await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'PATCH', msg);
+        await sbUpdate('amfi_discord', `ticket_id=eq.${t.id}`, { sig });
+        console.log(`Amfi ticket bijgewerkt: #${t.nr} (${t.status})`);
+      } catch (e) {
+        // bericht verwijderd in Discord → niet opnieuw proberen
+        if (e.status === 404) await sbUpdate('amfi_discord', `ticket_id=eq.${t.id}`, { sig });
+        console.log(`Amfi ticket #${t.nr} bijwerken: ${e.message}`);
+      }
+    }
+  }
+}
+
+// agenda, mededelingen en amfi los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices(), amfi()]);
 results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
 if (results.some(r => r.status === 'rejected')) process.exit(1);

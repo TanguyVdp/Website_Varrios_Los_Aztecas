@@ -42,6 +42,7 @@ jobs:
           DISCORD_AGENDA_CHANNEL_ID: ${{ secrets.DISCORD_AGENDA_CHANNEL_ID }}
           DISCORD_MEDEDELINGEN_CHANNEL_ID: ${{ secrets.DISCORD_MEDEDELINGEN_CHANNEL_ID }}
           DISCORD_MEDEDELINGEN_ROLE_ID: ${{ secrets.DISCORD_MEDEDELINGEN_ROLE_ID }}
+          DISCORD_AMFI_CHANNEL_ID: '1569308317237645342'   # lead-kanaal voor amfi-tickets (kanaal-ID is niet geheim)
         run: node .github/scripts/agenda-bot.mjs
 
       - name: Bewaar meld-status
