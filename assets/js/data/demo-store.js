@@ -145,7 +145,7 @@
       mythisch_klant: ruil ? q.mythisch_klant : null, mythisch_loods: ruil ? q.mythisch_loods : null });
     const until = new Date(new Date(ts).getTime() + (q.cooldown_uur || 0) * 3600000);
     t.messages.push(msg('bot', null, ruil
-      ? `Ruil afgerond door ${name}: ${U.num(q.amfetamine)} amfetamine + ${AM.eur(q.wit_geld)} wit + ${AM.eur(q.zwart_geld)} zwart ontvangen → ${U.num(q.mythisch_klant)} mythische gegeven. Je kan een nieuw ticket maken vanaf ${U.ts(until)}. Bedankt!`
+      ? `Ruil afgerond door ${name}: ${U.num(q.amfetamine)} amfetamine + ${q.coke_bladeren ? `${U.num(q.coke_bladeren)} coke bladeren + ` : ''}${AM.eur(q.wit_geld)} wit + ${AM.eur(q.zwart_geld)} zwart ontvangen → ${U.num(q.mythisch_klant)} mythische geleverd. Je kan een nieuw ticket maken vanaf ${U.ts(until)}. Bedankt!`
       : `Ticket afgerond door ${name}. Bedankt!`, ts));
   }
   function seedAmfi(st) {

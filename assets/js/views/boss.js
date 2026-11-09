@@ -377,6 +377,7 @@
   }
   const RUIL_FIELDS = [
     ['amfetamine', 'Amfetamine per ticket', 'exact zoveel'],
+    ['coke_bladeren', 'Coke bladeren', 'van de klant'],
     ['wit_geld', 'Wit geld €', 'naar de loods'],
     ['zwart_geld', 'Zwart geld €', 'van de klant'],
     ['mythisch_klant', 'Mythische terug', 'naar de klant'],

@@ -14,6 +14,7 @@
   A.DEFAULT = {
     ruil: {
       amfetamine: 50,          // exact zoveel per ticket (niet meer, niet minder)
+      coke_bladeren: 150,      // brengt de klant mee
       wit_geld: 50000,         // money — gaat naar de loods
       zwart_geld: 250000,      // black_money
       mythisch_klant: 47,      // krijgt de klant terug
@@ -174,6 +175,7 @@
       `Hey ${t.user_name}! Ticket #${String(t.nr).padStart(3, '0')} staat in de wachtrij — je bent nummer ${pos}.`,
       '', 'Breng dit mee naar de loods:',
       `• ${num(q.amfetamine)} amfetamine`,
+      ...(q.coke_bladeren ? [`• ${num(q.coke_bladeren)} coke bladeren`] : []),   // oude tickets hebben dit niet
       `• ${eur(q.wit_geld)} wit geld`,
       `• ${eur(q.zwart_geld)} zwart geld`,
       '', `Je krijgt ${num(q.mythisch_klant)} mythische terug.`,

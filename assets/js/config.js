@@ -53,7 +53,7 @@ App.MODULES = [
   { id: 'amfiloods', name: 'Amfi loods', icon: 'flask', tone: 'sky', access: 'amfi',
     onderhoud: 'Wij proberen eerst de loods goed te upgraden, zodat hij al 2 volledige werknemers heeft voordat we mensen laten verwerken.',
     tagline: 'Bestellen via een ticket',
-    desc: 'Ruil je amfetamine (+ wit en zwart geld) voor mythische. Via een ticket en de wachtrij; na je ruil even wachten voor je volgende ticket.',
+    desc: 'Ruil je amfetamine (+ coke bladeren, wit en zwart geld) voor mythische. Via een ticket en de wachtrij; na je ruil even wachten voor je volgende ticket.',
     routes: [{ path: 'amfi', label: 'Tickets', icon: 'message' }] },
   { id: 'wietloods', name: 'Wiet loods', icon: 'leaf', tone: 'lime', access: 'wiet',
     tagline: 'Planten in, zakjes uit',

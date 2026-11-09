@@ -83,7 +83,7 @@
         <div class="abs-hero-text">
           <span class="lh-eyebrow sky">${I('flask', 13)} Amfi loods</span>
           <h2>Ruil via een <span class="sky">ticket</span></h2>
-          <p class="muted">Breng <b>${U.num(r.amfetamine)} amfetamine</b> + <b>${fmt(r.wit_geld)}</b> wit geld + <b>${fmt(r.zwart_geld)}</b> zwart geld naar de loods en je krijgt <b>${U.num(r.mythisch_klant)} mythische</b> terug. Je komt in de wachtrij en een medewerker helpt je verder in je ticket. Na je ruil kan je pas na ${U.num(r.cooldown_uur)} uur een nieuw ticket maken.</p>
+          <p class="muted">Breng <b>${U.num(r.amfetamine)} amfetamine</b> + ${r.coke_bladeren ? `<b>${U.num(r.coke_bladeren)} coke bladeren</b> + ` : ''}<b>${fmt(r.wit_geld)}</b> wit geld + <b>${fmt(r.zwart_geld)}</b> zwart geld naar de loods en je krijgt <b>${U.num(r.mythisch_klant)} mythische</b> terug. Je komt in de wachtrij en een medewerker helpt je verder in je ticket. Na je ruil kan je pas na ${U.num(r.cooldown_uur)} uur een nieuw ticket maken.</p>
           <div class="lh-meta"><span>${I('clock', 13)} ${queue.length} in de wachtrij</span><span>${I('message', 13)} ${busy.length} in behandeling</span></div>
         </div>
         ${heroAction(ctx, open)}
@@ -116,6 +116,7 @@
         <span class="eyebrow">Breng mee naar de loods</span>
         <ul class="q-list">
           <li><span>Amfetamine</span><b class="mono">${U.num(q.amfetamine)}</b></li>
+          ${q.coke_bladeren ? `<li><span>Coke bladeren</span><b class="mono">${U.num(q.coke_bladeren)}</b></li>` : ''}
           <li><span>Wit geld</span><b class="mono">${fmt(q.wit_geld)}</b></li>
           <li><span>Zwart geld</span><b class="mono">${fmt(q.zwart_geld)} <i class="zw">zwart</i></b></li>
         </ul>
@@ -179,9 +180,10 @@
     }
     const checks = [
       `${U.num(q.amfetamine)} amfetamine ontvangen`,
+      ...(q.coke_bladeren ? [`${U.num(q.coke_bladeren)} coke bladeren ontvangen`] : []),   // oude tickets hebben dit niet
       `${fmt(q.wit_geld)} wit geld ontvangen <em>(voor de loods)</em>`,
       `${fmt(q.zwart_geld)} zwart geld ontvangen`,
-      `${U.num(q.mythisch_klant)} mythische gegeven aan <span class="tcap">${U.esc(t.user_name)}</span>`
+      `${U.num(q.mythisch_klant)} mythische geleverd aan <span class="tcap">${U.esc(t.user_name)}</span>`
     ];
     C.modal.open(`
       <div class="af-head"><span class="af-ic" style="--accent:var(--lime)">${I('check', 18)}</span><div><h3>Ruil afronden — ${nr(t)}</h3><p class="muted small">Vink alles af wat in-game gebeurd is.</p></div></div>
@@ -239,7 +241,7 @@
             ${C.cardHead(AM.isRuil(t) ? 'Ruil' : 'Bestelling', 'flask')}
             <ul class="qs-facts">
               <li><span>Van</span><b class="tcap">${U.esc(t.user_name)}</b></li>
-              <li><span>Brengt binnen</span><b>${U.num(sm.in)} amfetamine</b></li>
+              <li><span>Brengt binnen</span><b>${U.num(sm.in)} amfetamine${q.coke_bladeren ? ` + ${U.num(q.coke_bladeren)} coke bladeren` : ''}</b></li>
               <li><span>Krijgt</span><b>${U.num(sm.out)} ${sm.label}</b></li>
               ${AM.isRuil(t) ? '' : `<li><span>Ingrediënten</span><b>${(AM.LEVERING[t.levering] || AM.LEVERING.ruil).label}</b></li>`}
               <li><span>Status</span><b>${t.status === 'wachtrij' ? `plaats ${pos} in de wachtrij` : AM.STATUS[t.status].label}</b></li>
