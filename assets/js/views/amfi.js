@@ -185,11 +185,18 @@
     ];
     C.modal.open(`
       <div class="af-head"><span class="af-ic" style="--accent:var(--lime)">${I('check', 18)}</span><div><h3>Ruil afronden — ${nr(t)}</h3><p class="muted small">Vink alles af wat in-game gebeurd is.</p></div></div>
+      <button type="button" class="btn ghost sm block" id="fin-all">${I('check', 13)} Alles aanvinken</button>
       <div class="fin-checks">${checks.map((c, i) => `<label class="fin-check"><input type="checkbox" data-fin="${i}"><span>${c}</span></label>`).join('')}</div>
       <p class="muted small">De loods houdt <b>${U.num(q.mythisch_loods)} mythische</b> + <b>${fmt(q.wit_geld)}</b> wit geld — dat komt op jouw naam in het overzicht van de Boss. ${U.esc(t.user_name)} kan daarna pas na ${U.num(q.cooldown_uur)} uur een nieuw ticket maken.</p>
       <div class="row-2"><button class="btn ghost" data-modal-close>Terug</button><button class="btn primary" id="fin-ok" disabled>${I('check', 14)} Ruil gedaan</button></div>`, modal => {
-      const boxes = [...modal.querySelectorAll('[data-fin]')], ok = modal.querySelector('#fin-ok');
-      boxes.forEach(b => b.addEventListener('change', () => { ok.disabled = !boxes.every(x => x.checked); }));
+      const boxes = [...modal.querySelectorAll('[data-fin]')], ok = modal.querySelector('#fin-ok'), all = modal.querySelector('#fin-all');
+      const sync = () => {
+        const done = boxes.every(x => x.checked);
+        ok.disabled = !done;
+        all.innerHTML = `${I('check', 13)} Alles ${done ? 'uitvinken' : 'aanvinken'}`;
+      };
+      boxes.forEach(b => b.addEventListener('change', sync));
+      all.addEventListener('click', () => { const on = !boxes.every(x => x.checked); boxes.forEach(b => { b.checked = on; }); sync(); });
       ok.addEventListener('click', () => { C.modal.close(); go(); });
     });
   }
