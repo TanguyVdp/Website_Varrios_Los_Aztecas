@@ -378,12 +378,14 @@
   const RUIL_FIELDS = [
     ['amfetamine', 'Amfetamine per ticket', 'exact zoveel'],
     ['coke_bladeren', 'Coke bladeren', 'van de klant'],
+    ['lidocaine', 'Lidocaïne', 'van de klant'],
     ['wit_geld', 'Wit geld €', 'naar de loods'],
     ['zwart_geld', 'Zwart geld €', 'van de klant'],
     ['mythisch_klant', 'Mythische terug', 'naar de klant'],
     ['mythisch_loods', 'Mythische loods', 'blijft in de loods'],
     ['cooldown_uur', 'Cooldown (uur)', 'na het afronden']
   ];
+  const ruilGrid = (attr, fields, r) => `<div class="ruil-grid">${fields.map(([k, label, hint]) => `<label class="field"><span>${label} <em>${hint}</em></span><input class="input mono" data-${attr}="${k}" type="number" min="0" step="1" value="${r[k]}"></label>`).join('')}</div>`;
   const mEur = n => AM.eur(n);
 
   function sAmfi(ctx) {
@@ -402,7 +404,7 @@
     return `
       <div class="kpi-row four">
         ${C.kpi({ label: 'Mythische (loods)', value: U.num(t.mythisch_loods), icon: 'flask', tone: 'sky', sub: `+${U.num(s.ruil.mythisch_loods)} per afgeronde ruil` })}
-        ${C.kpi({ label: 'Wit geld verdiend', value: mEur(t.wit_geld), icon: 'euro', tone: 'lime', sub: `+${mEur(s.ruil.wit_geld)} per ruil` })}
+        ${C.kpi({ label: 'Wit geld verdiend', value: mEur(t.wit_geld), icon: 'euro', tone: 'lime', sub: `+${mEur(s.ruil.wit_geld)} of ${mEur(s.ruil_groot.wit_geld)} per ruil` })}
         ${C.kpi({ label: 'Mensen geholpen', value: U.num(t.geholpen), icon: 'users', tone: 'violet', sub: `${U.num(t.mythisch_klant)} mythische uitgedeeld` })}
         ${C.kpi({ label: 'Inkoop nog uit te betalen', value: mEur(t.kost), icon: 'box', tone: 'warn', sub: t.kost_zwart ? `+ ${mEur(t.kost_zwart)} zwart` : betaald.length ? `${mEur(betaaldTot)} al uitbetaald` : `${U.num(inkoop.length)} registraties` })}
       </div>
@@ -488,7 +490,10 @@
           ${C.cardHead('Instellingen', 'gear')}
           <p class="muted small">De vaste ruil per ticket en de producten met hun prijs. Nieuwe tickets gebruiken deze waarden; bestaande tickets houden de ruil van toen ze aangemaakt werden. Vink <b>inkoop</b> aan bij de winkels waarvan producten als inkoop geregistreerd mogen worden. Prijs leeg = geen prijs (kan niet als inkoop).</p>
           <form class="stack" id="am-form" autocomplete="off">
-            <div class="ruil-grid">${RUIL_FIELDS.map(([k, label, hint]) => `<label class="field"><span>${label} <em>${hint}</em></span><input class="input mono" data-ruil="${k}" type="number" min="0" step="1" value="${s.ruil[k]}"></label>`).join('')}</div>
+            <span class="eyebrow">${AM.NIVEAUS[0].label}</span>
+            ${ruilGrid('ruil', RUIL_FIELDS, s.ruil)}
+            <span class="eyebrow">${AM.NIVEAUS[1].label}</span>
+            ${ruilGrid('ruil-groot', RUIL_FIELDS.filter(([k]) => k !== 'cooldown_uur'), s.ruil_groot)}
             <div class="field"><span>Winkels & producten</span>
               <div id="am-shops">${s.winkels.map(shopCard).join('')}</div>
               <button type="button" class="btn ghost sm" id="am-shop-add">${I('plus', 13)} Winkel / locatie toevoegen</button>
@@ -903,7 +908,9 @@
               })).filter(w => w.naam.trim() || w.producten.length);
               const ruil = {};
               root.querySelectorAll('[data-ruil]').forEach(i => { ruil[i.dataset.ruil] = i.value === '' ? NaN : Number(i.value); });
-              await App.store.bossSetAmfiSettings({ ruil, winkels });
+              const ruil_groot = {};
+              root.querySelectorAll('[data-ruil-groot]').forEach(i => { ruil_groot[i.dataset.ruilGroot] = i.value === '' ? NaN : Number(i.value); });
+              await App.store.bossSetAmfiSettings({ ruil, ruil_groot, winkels });
               C.toast('Amfi-instellingen opgeslagen');
             } catch (ex) { root.querySelector('#am-err').textContent = U.friendlyError(ex); }
           });

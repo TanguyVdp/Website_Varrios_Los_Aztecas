@@ -58,6 +58,11 @@
   // knop rechtsboven: naar je open ticket, nieuw ticket, of het aftellertje van je cooldown
   function heroAction(ctx, open) {
     if (open) return `<button class="btn ghost lg" data-open="${open.id}">${I('message', 16)} Naar mijn ticket ${nr(open)}</button>`;
+    if (!AM.niveausVoor(ctx.me).length) return `
+      <div class="amfi-cd">
+        <span class="amfi-cd-label">${I('lock', 13)} Nieuw ticket</span>
+        <b>Vanaf rang Broeder</b>
+      </div>`;
     const until = App.amfiCooldown(ctx);
     if (until) { const c = App.amfiCooldownText(until); return `
       <div class="amfi-cd" title="Na een afgeronde ruil moet je ${AM.settings(ctx.state.settings.amfi).ruil.cooldown_uur} uur wachten">
@@ -70,20 +75,24 @@
 
   function listView(ctx) {
     const { state, me } = ctx;
-    const staff = isStaff(ctx), r = AM.settings(state.settings.amfi).ruil;
+    const staff = isStaff(ctx), st = AM.settings(state.settings.amfi);
     const mine = state.tickets.filter(t => t.user_id === me.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const queue = state.tickets.filter(t => t.status === 'wachtrij').sort(byQueue);
     const busy = state.tickets.filter(t => t.status === 'bezig').sort(byQueue);
     const done = state.tickets.filter(t => !AM.OPEN(t.status)).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 10);
     const tab = staff ? ui.tab : 'mijn';
     const open = isGp(ctx) ? null : mine.find(t => AM.OPEN(t.status));   // de gangpot mag altijd een nieuw ticket maken
-    const canNew = !open && !App.amfiCooldown(ctx);
+    const canNew = !open && !App.amfiCooldown(ctx) && AM.niveausVoor(ctx.me).length > 0;
+    // "50 amfetamine + 150 coke bladeren + ..." voor één ruil
+    const brengt = r => [`<b>${U.num(r.amfetamine)} amfetamine</b>`, r.coke_bladeren && `<b>${U.num(r.coke_bladeren)} coke bladeren</b>`, r.lidocaine && `<b>${U.num(r.lidocaine)} lidocaïne</b>`,
+      `<b>${fmt(r.wit_geld)}</b> wit geld`, r.zwart_geld && `<b>${fmt(r.zwart_geld)}</b> zwart geld`].filter(Boolean).join(' + ');
     return `
       <section class="abs-hero amfi-hero">
         <div class="abs-hero-text">
           <span class="lh-eyebrow sky">${I('flask', 13)} Amfi loods</span>
           <h2>Ruil via een <span class="sky">ticket</span></h2>
-          <p class="muted">Breng <b>${U.num(r.amfetamine)} amfetamine</b> + ${r.coke_bladeren ? `<b>${U.num(r.coke_bladeren)} coke bladeren</b> + ` : ''}<b>${fmt(r.wit_geld)}</b> wit geld + <b>${fmt(r.zwart_geld)}</b> zwart geld naar de loods en je krijgt <b>${U.num(r.mythisch_klant)} mythische</b> terug. Je komt in de wachtrij en een medewerker helpt je verder in je ticket. Na je ruil kan je pas na ${U.num(r.cooldown_uur)} uur een nieuw ticket maken.</p>
+          ${AM.NIVEAUS.map(n => `<p class="muted"><b>${n.label}:</b> breng ${brengt(st[n.key])} naar de loods en je krijgt <b>${U.num(st[n.key].mythisch_klant)} mythische</b> terug.</p>`).join('')}
+          <p class="muted">Je komt in de wachtrij en een medewerker helpt je verder in je ticket. Na je ruil kan je pas na ${U.num(st.ruil.cooldown_uur)} uur een nieuw ticket maken.</p>
           <div class="lh-meta"><span>${I('clock', 13)} ${queue.length} in de wachtrij</span><span>${I('message', 13)} ${busy.length} in behandeling</span></div>
         </div>
         ${heroAction(ctx, open)}
@@ -117,8 +126,9 @@
         <ul class="q-list">
           <li><span>Amfetamine</span><b class="mono">${U.num(q.amfetamine)}</b></li>
           ${q.coke_bladeren ? `<li><span>Coke bladeren</span><b class="mono">${U.num(q.coke_bladeren)}</b></li>` : ''}
+          ${q.lidocaine ? `<li><span>Lidocaïne</span><b class="mono">${U.num(q.lidocaine)}</b></li>` : ''}
           <li><span>Wit geld</span><b class="mono">${fmt(q.wit_geld)}</b></li>
-          <li><span>Zwart geld</span><b class="mono">${fmt(q.zwart_geld)} <i class="zw">zwart</i></b></li>
+          ${q.zwart_geld ? `<li><span>Zwart geld</span><b class="mono">${fmt(q.zwart_geld)} <i class="zw">zwart</i></b></li>` : ''}
         </ul>
         <div class="q-total"><span>Je krijgt terug</span><b class="mono">${U.num(q.mythisch_klant)} mythische</b></div>
       </div>`;
@@ -146,22 +156,32 @@
 
   // ---------- nieuw ticket ----------
   function newTicketModal(ctx) {
-    const q = AM.quote(ctx.state.settings.amfi);
+    const tiers = AM.niveausVoor(ctx.me), quoteOf = k => AM.quote(ctx.state.settings.amfi, k);
+    let niveau = tiers[0].key;
+    const q = quoteOf(niveau);
+    const hint = q => `Vaste ruil: altijd exact ${U.num(q.amfetamine)} amfetamine per ticket.`;
     C.modal.open(`
-      <div class="af-head"><span class="af-ic" style="--accent:var(--sky)">${I('flask', 18)}</span><div><h3>Nieuw ticket</h3><p class="muted small">Vaste ruil: altijd exact ${U.num(q.amfetamine)} amfetamine per ticket.</p></div></div>
+      <div class="af-head"><span class="af-ic" style="--accent:var(--sky)">${I('flask', 18)}</span><div><h3>Nieuw ticket</h3><p class="muted small" id="tk-hint">${hint(q)}</p></div></div>
       <form class="stack" id="tk-form" autocomplete="off">
-        ${ruilHtml(q)}
+        ${tiers.length > 1 ? C.seg('niveau', tiers.map(n => ({ value: n.key, label: `${U.num(quoteOf(n.key).amfetamine)}× amfetamine` })), niveau) : ''}
+        <div id="tk-ruil">${ruilHtml(q)}</div>
         <p class="muted small">${I('clock', 12)} Na je ruil kan je pas na ${U.num(q.cooldown_uur)} uur een nieuw ticket maken.</p>
         <label class="field"><span>Opmerking <em>(optioneel)</em></span><textarea class="input" id="tk-opm" rows="2" maxlength="300" placeholder="bv. liefst vandaag nog"></textarea></label>
         <div class="err" id="tk-err"></div>
         <button class="btn sky-btn block lg" type="submit" id="tk-submit">${I('message', 16)} Ticket aanmaken</button>
       </form>`, modal => {
       const $ = s => modal.querySelector(s);
+      C.bindSeg(modal, (name, value) => {
+        niveau = value;
+        modal.querySelectorAll('[data-seg-value]').forEach(b => b.classList.toggle('on', b.dataset.segValue === value));
+        $('#tk-ruil').innerHTML = ruilHtml(quoteOf(value));
+        $('#tk-hint').textContent = hint(quoteOf(value));
+      });
       $('#tk-form').addEventListener('submit', e => {
         e.preventDefault();
         C.busy($('#tk-submit'), async () => {
           try {
-            const t = await App.store.createAmfiTicket(ctx.me.id, { opmerking: $('#tk-opm').value });
+            const t = await App.store.createAmfiTicket(ctx.me.id, { opmerking: $('#tk-opm').value, niveau });
             C.modal.close(); C.toast(`Ticket ${nr(t)} aangemaakt — je staat in de wachtrij`); App.go('amfi/' + t.id);
           } catch (ex) { $('#tk-err').textContent = U.friendlyError(ex); }
         });
@@ -181,8 +201,9 @@
     const checks = [
       `${U.num(q.amfetamine)} amfetamine ontvangen`,
       ...(q.coke_bladeren ? [`${U.num(q.coke_bladeren)} coke bladeren ontvangen`] : []),   // oude tickets hebben dit niet
+      ...(q.lidocaine ? [`${U.num(q.lidocaine)} lidocaïne ontvangen`] : []),
       `${fmt(q.wit_geld)} wit geld ontvangen <em>(voor de loods)</em>`,
-      `${fmt(q.zwart_geld)} zwart geld ontvangen`,
+      ...(q.zwart_geld ? [`${fmt(q.zwart_geld)} zwart geld ontvangen`] : []),
       `${U.num(q.mythisch_klant)} mythische geleverd aan <span class="tcap">${U.esc(t.user_name)}</span>`
     ];
     C.modal.open(`
@@ -241,7 +262,7 @@
             ${C.cardHead(AM.isRuil(t) ? 'Ruil' : 'Bestelling', 'flask')}
             <ul class="qs-facts">
               <li><span>Van</span><b class="tcap">${U.esc(t.user_name)}</b></li>
-              <li><span>Brengt binnen</span><b>${U.num(sm.in)} amfetamine${q.coke_bladeren ? ` + ${U.num(q.coke_bladeren)} coke bladeren` : ''}</b></li>
+              <li><span>Brengt binnen</span><b>${U.num(sm.in)} amfetamine${q.coke_bladeren ? ` + ${U.num(q.coke_bladeren)} coke bladeren` : ''}${q.lidocaine ? ` + ${U.num(q.lidocaine)} lidocaïne` : ''}</b></li>
               <li><span>Krijgt</span><b>${U.num(sm.out)} ${sm.label}</b></li>
               ${AM.isRuil(t) ? '' : `<li><span>Ingrediënten</span><b>${(AM.LEVERING[t.levering] || AM.LEVERING.ruil).label}</b></li>`}
               <li><span>Status</span><b>${t.status === 'wachtrij' ? `plaats ${pos} in de wachtrij` : AM.STATUS[t.status].label}</b></li>

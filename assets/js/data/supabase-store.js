@@ -342,11 +342,12 @@
     // ---- amfi loods ----
     // actor = { userId, name, boss } — boss = Boss menu ontgrendeld
     // altijd exact de ruil; de database controleert het aantal, de open tickets en de cooldown en maakt de offerte zelf
-    async createAmfiTicket(userId, { opmerking }) {
+    async createAmfiTicket(userId, { opmerking, niveau = 'ruil' }) {
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
+      if (!AM.niveausVoor(u).some(n => n.key === niveau)) throw E('AMFI_RANG_TE_LAAG');
       if (!L.isGangpot(u) && AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
-      const quote = AM.quote(state.settings.amfi);
+      const quote = AM.quote(state.settings.amfi, niveau);
       // de database vult ticketnummer en plaats in de wachtrij in
       const intro = AM.intro({ nr: '{nr}', user_name: u.name, quote }, '{pos}');
       const id = await rpc('fn_amfi_create_ticket', { p_user_id: userId, p_keer: quote.keer, p_levering: 'ruil', p_opmerking: opmerking || null, p_quote: quote, p_intro: intro });
@@ -377,8 +378,8 @@
       await rpc('fn_boss_set_access', { p_user_id: userId, p_key: 'amfi_staff', p_on: !!on, p_boss_pin_hash: needBoss() });
       await after(['users']);
     },
-    async bossSetAmfiSettings({ ruil, winkels }) {
-      const settings = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, winkels }) };
+    async bossSetAmfiSettings({ ruil, ruil_groot, winkels }) {
+      const settings = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, ruil_groot, winkels }) };
       await rpc('fn_boss_set_amfi_settings', { p_settings: settings, p_boss_pin_hash: needBoss() });
       await after(['settings']);
     },

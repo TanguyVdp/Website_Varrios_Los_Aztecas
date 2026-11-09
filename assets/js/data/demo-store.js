@@ -127,8 +127,8 @@
   // ---------- amfi loods: tickets (demo) ----------
   const AM = App.AMFI;
   const msg = (from, u, text, ts) => ({ id: U.uid(), from, user_id: u ? u.id : null, user_name: u ? u.name : AM.BOT, text, ts });
-  function newTicket(st, u, opmerking, ts) {
-    const quote = AM.quote(st.settings.amfi);
+  function newTicket(st, u, opmerking, ts, niveau) {
+    const quote = AM.quote(st.settings.amfi, niveau);
     const t = { id: U.uid(), nr: ++st.ticketSeq, user_id: u.id, user_name: u.name, keer: quote.keer, levering: 'ruil', opmerking: opmerking || null,
       quote, status: 'wachtrij', medewerker_id: null, medewerker_naam: null, created_at: ts, updated_at: ts, messages: [] };
     st.tickets.push(t);
@@ -145,7 +145,7 @@
       mythisch_klant: ruil ? q.mythisch_klant : null, mythisch_loods: ruil ? q.mythisch_loods : null });
     const until = new Date(new Date(ts).getTime() + (q.cooldown_uur || 0) * 3600000);
     t.messages.push(msg('bot', null, ruil
-      ? `Ruil afgerond door ${name}: ${U.num(q.amfetamine)} amfetamine + ${q.coke_bladeren ? `${U.num(q.coke_bladeren)} coke bladeren + ` : ''}${AM.eur(q.wit_geld)} wit + ${AM.eur(q.zwart_geld)} zwart ontvangen → ${U.num(q.mythisch_klant)} mythische geleverd. Je kan een nieuw ticket maken vanaf ${U.ts(until)}. Bedankt!`
+      ? `Ruil afgerond door ${name}: ${U.num(q.amfetamine)} amfetamine + ${q.coke_bladeren ? `${U.num(q.coke_bladeren)} coke bladeren + ` : ''}${q.lidocaine ? `${U.num(q.lidocaine)} lidocaïne + ` : ''}${AM.eur(q.wit_geld)} wit${q.zwart_geld ? ` + ${AM.eur(q.zwart_geld)} zwart` : ''} ontvangen → ${U.num(q.mythisch_klant)} mythische geleverd. Je kan een nieuw ticket maken vanaf ${U.ts(until)}. Bedankt!`
       : `Ticket afgerond door ${name}. Bedankt!`, ts));
   }
   function seedAmfi(st) {
@@ -497,14 +497,15 @@
     // ---- amfi loods: tickets (later: tabellen amfi_tickets + amfi_messages, RPC's per actie) ----
     // actor = { userId, name, boss } — boss = Boss menu ontgrendeld (mag alles wat een medewerker mag)
     // altijd exact de ruil uit de instellingen; max 1 open ticket; cooldown na je vorige afgeronde ticket
-    async createAmfiTicket(userId, { opmerking }) {
+    async createAmfiTicket(userId, { opmerking, niveau = 'ruil' }) {
       await latency();
       const u = userById(userId);
       if (!App.hasAccess(u, 'amfi')) throw E('GEEN_TOEGANG');
+      if (!AM.niveausVoor(u).some(n => n.key === niveau)) throw E('AMFI_RANG_TE_LAAG');
       // de gangpot (Boss die als gangpot werkt): onbeperkt tickets, geen cooldown
       if (!L.isGangpot(u) && state.tickets.some(t => t.user_id === u.id && AM.OPEN(t.status))) throw E('AL_OPEN_TICKET');
       if (!L.isGangpot(u) && AM.cooldownUntil(state.tickets, u.id, state.settings.amfi)) throw E('AMFI_COOLDOWN');
-      const t = newTicket(state, u, String(opmerking || '').trim().slice(0, 300), iso(Date.now()));
+      const t = newTicket(state, u, String(opmerking || '').trim().slice(0, 300), iso(Date.now()), niveau);
       commit(); return t;
     },
     async ticketMessage(ticketId, actor, text) {
@@ -567,9 +568,9 @@
       commit();
     },
     // ruil + winkels/prijzen (prijs leeg = geen prijs; inkoop = winkel toegelaten voor de inkoopregistratie)
-    async bossSetAmfiSettings({ ruil, winkels }) {
+    async bossSetAmfiSettings({ ruil, ruil_groot, winkels }) {
       await latency();
-      state.settings.amfi = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, winkels }) };
+      state.settings.amfi = { ...state.settings.amfi, ...AM.cleanSettings({ ruil, ruil_groot, winkels }) };
       commit();
     },
     // inkoop voor de loods (boss): enkel producten uit toegelaten winkels, prijs uit de instellingen

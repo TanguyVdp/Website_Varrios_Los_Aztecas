@@ -1,8 +1,9 @@
 /* ============================================================
  * Amfi loods — pure rekenlogica (geen DOM, geen opslag).
- * Vaste ruil per ticket (altijd exact): de klant levert amfetamine + wit geld + zwart geld aan en krijgt
- * mythische terug; de loods houdt de rest van de mythische + het wit geld. Daarna een cooldown per klant.
- * Alles staat in App.AMFI.DEFAULT.ruil en is aanpasbaar door de Boss (Boss menu → Amfi loods);
+ * Vaste ruil per ticket (altijd exact), in twee niveaus volgens rang (App.AMFI.NIVEAUS): de klant levert amfetamine +
+ * coke bladeren + lidocaïne + wit geld aan en krijgt mythische terug; de loods houdt de rest van de mythische + het
+ * wit geld. Daarna een cooldown per klant.
+ * Alles staat in App.AMFI.DEFAULT (ruil, ruil_groot) en is aanpasbaar door de Boss (Boss menu → Amfi loods);
  * de database (_amfi_ruil in supabase/update-v2-amfi-ruil.sql) gebruikt dezelfde standaardwaarden.
  * De winkels met prijzen dienen voor de inkoopregistratie: enkel winkels met `inkoop: true` zijn toegelaten.
  * ============================================================ */
@@ -15,11 +16,15 @@
     ruil: {
       amfetamine: 50,          // exact zoveel per ticket (niet meer, niet minder)
       coke_bladeren: 150,      // brengt de klant mee
+      lidocaine: 100,          // brengt de klant mee
       wit_geld: 50000,         // money — gaat naar de loods
-      zwart_geld: 250000,      // black_money
+      zwart_geld: 0,           // black_money (0 = niet vragen)
       mythisch_klant: 47,      // krijgt de klant terug
       mythisch_loods: 3,       // houdt de loods
-      cooldown_uur: 48         // na het afronden van je ticket
+      cooldown_uur: 48         // na het afronden van je ticket (geldt voor beide niveaus)
+    },
+    ruil_groot: {              // zelfde velden, vanaf Veteraan
+      amfetamine: 75, coke_bladeren: 225, lidocaine: 150, wit_geld: 75000, zwart_geld: 0, mythisch_klant: 72, mythisch_loods: 3
     },
     winkels: [
       { naam: 'Groothandel', info: null, inkoop: true, producten: [
@@ -40,6 +45,18 @@
         { naam: 'Coke bladeren', prijs: null, zwart: false }] }
     ]
   };
+  // de twee ruilen: wie minstens minRank is (App.RANKS staat van hoog naar laag) mag ze kiezen
+  A.NIVEAUS = [
+    { key: 'ruil',       label: 'Vanaf Broeder',  minRank: 'broeder' },
+    { key: 'ruil_groot', label: 'Vanaf Veteraan', minRank: 'veteraan' }
+  ];
+  const rankOk = (rank, min) => {
+    const i = App.RANKS.findIndex(r => r.id === rank);
+    return i >= 0 && i <= App.RANKS.findIndex(r => r.id === min);
+  };
+  // welke ruilen iemand mag kiezen (eigenaar en gangpot: allebei) — de database controleert dit ook
+  A.niveausVoor = u => A.NIVEAUS.filter(n => !!u && (u.owner || App.L.isGangpot(u) || rankOk(u.rank, n.minRank)));
+
   // winkels die standaard toegelaten zijn voor de inkoop (voor instellingen van vóór het vinkje)
   const INKOOP_STD = ['groothandel', 'apotheek', 'standaard winkel'];
 
@@ -49,24 +66,26 @@
     return {
       ...s,
       ruil: { ...A.DEFAULT.ruil, ...(s.ruil || {}) },
+      ruil_groot: { ...A.DEFAULT.ruil_groot, ...(s.ruil_groot || {}) },
       winkels: (s.winkels || A.DEFAULT.winkels).map(w => ({ ...w,
         inkoop: w.inkoop === undefined ? INKOOP_STD.includes(String(w.naam || '').trim().toLowerCase()) : !!w.inkoop }))
     };
   };
 
   // instellingen uit het Boss menu controleren en opkuisen (gooit 'ONGELDIGE_RUIL' / 'ONGELDIGE_PRIJZEN')
-  A.cleanSettings = ({ ruil, winkels }) => {
-    const r = {};
-    Object.keys(A.DEFAULT.ruil).forEach(k => {
-      const v = Number(ruil && ruil[k]);
+  A.cleanSettings = ({ ruil, ruil_groot, winkels }) => {
+    const clean = (key, src) => Object.fromEntries(Object.keys(A.DEFAULT[key]).map(k => {
+      const v = Number(src && src[k]);
       if (!Number.isInteger(v) || v < 0) throw new Error('ONGELDIGE_RUIL');
-      r[k] = v;
-    });
-    if (r.amfetamine <= 0) throw new Error('ONGELDIGE_RUIL');
+      return [k, v];
+    }));
+    const r = clean('ruil', ruil), g = clean('ruil_groot', ruil_groot);
+    // het aantal amfetamine bepaalt welke ruil een ticket is, dus dat moet verschillen
+    if (r.amfetamine <= 0 || g.amfetamine <= 0 || r.amfetamine === g.amfetamine) throw new Error('ONGELDIGE_RUIL');
     const ws = (winkels || []).map(w => ({ naam: String(w.naam || '').trim().slice(0, 40), info: String(w.info || '').trim().slice(0, 120) || null, inkoop: !!w.inkoop,
       producten: (w.producten || []).map(p => ({ naam: String(p.naam || '').trim().slice(0, 40), prijs: p.prijs === '' || p.prijs == null ? null : Number(p.prijs), zwart: !!p.zwart })) }));
     if (ws.some(w => !w.naam || w.producten.some(p => !p.naam || (p.prijs != null && (!Number.isFinite(p.prijs) || p.prijs < 0))))) throw new Error('ONGELDIGE_PRIJZEN');
-    return { ruil: r, winkels: ws };
+    return { ruil: r, ruil_groot: g, winkels: ws };
   };
 
   // producten die als inkoop geregistreerd mogen worden: uit toegelaten winkels en met een prijs
@@ -91,9 +110,9 @@
   A.OPEN = s => s === 'wachtrij' || s === 'bezig';
 
   // offerte voor een ticket — bij het aanmaken bevroren in het ticket (in supabase-modus maakt de database ze)
-  A.quote = s => {
-    const r = A.settings(s).ruil;
-    return { type: 'ruil', keer: r.amfetamine, levering: 'ruil', ...r };
+  A.quote = (s, niveau = 'ruil') => {
+    const st = A.settings(s), r = st[niveau] || st.ruil;
+    return { type: 'ruil', keer: r.amfetamine, levering: 'ruil', ...r, cooldown_uur: st.ruil.cooldown_uur };
   };
   A.isRuil = t => !!(t && t.quote && t.quote.type === 'ruil');
   // korte samenvatting: wat er binnenkomt en wat de klant terugkrijgt (oude tickets: X amfetamine → X poeders)
@@ -176,8 +195,9 @@
       '', 'Breng dit mee naar de loods:',
       `• ${num(q.amfetamine)} amfetamine`,
       ...(q.coke_bladeren ? [`• ${num(q.coke_bladeren)} coke bladeren`] : []),   // oude tickets hebben dit niet
+      ...(q.lidocaine ? [`• ${num(q.lidocaine)} lidocaïne`] : []),
       `• ${eur(q.wit_geld)} wit geld`,
-      `• ${eur(q.zwart_geld)} zwart geld`,
+      ...(q.zwart_geld ? [`• ${eur(q.zwart_geld)} zwart geld`] : []),
       '', `Je krijgt ${num(q.mythisch_klant)} mythische terug.`,
       '', 'Een medewerker neemt zo snel mogelijk contact met je op in dit ticket.'
     ].join('\n');
