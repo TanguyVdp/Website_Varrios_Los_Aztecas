@@ -12,7 +12,8 @@
 //     Bijgehouden in agenda_pings: wie intussen antwoordt (of niet meer aanwezig is) gaat eruit zonder opnieuw
 //     getagd te worden; activiteit verwijderd → bericht weg. Vereist supabase/update-v2-agenda-tags.sql.
 //  4. Activiteit begonnen → knoppen uit; 12u na de start → bericht weg uit het kanaal. Activiteit verwijderd → bericht meteen weg.
-//     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
+//     Berichten staan in volgorde van de datum, de eerstvolgende ONDERAAN; staat er iets verkeerd, dan wordt opnieuw gepost.
+//     Onder een tag (24u/5u) staan zelf ook de knoppen Aanwezig/Afwezig, zodat getagde leden daar meteen antwoorden.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
 //     mededeling gewijzigd → bericht bijgewerkt; verwijderd op de site (uit de lobby) → het bericht BLIJFT in Discord.
@@ -157,13 +158,22 @@ const tags = list => list.map(u => u.discord_id ? `<@${u.discord_id}>` : `**${u.
 const overText = hours => hours === 24 ? 'morgen' : `over ${hours} uur`;
 const pingText = (ev, kind, hours, list) => kind === 'aanwezig'
   ? `🔔 ${tags(list)} — **${ev.titel}** begint ${overText(hours)}${ev.tijd ? ` (om ${ev.tijd})` : ''}. Tot straks!`
-  : `⏰ ${tags(list)} — **${ev.titel}** begint ${overText(hours)}${ev.tijd ? ` (om ${ev.tijd})` : ''} en ${list.length === 1 ? 'je hebt' : 'jullie hebben'} nog niet geantwoord. Klik op een knop in het agenda-bericht of op de site.`;
+  : `⏰ ${tags(list)} — **${ev.titel}** begint ${overText(hours)}${ev.tijd ? ` (om ${ev.tijd})` : ''} en ${list.length === 1 ? 'je hebt' : 'jullie hebben'} nog niet geantwoord. Antwoord hieronder 👇`;
+// knoppen onder de tag: wie getagd wordt, antwoordt meteen daar (zelfde custom_id als het agenda-bericht → Edge Function)
+const pingButtons = (ev, kind) => [{
+  type: 1,
+  components: [
+    ...(kind === 'open' ? RSVP.filter(s => !s.old).map(s => ({ type: 2, style: s.style, label: s.label, emoji: { name: s.emoji }, custom_id: `rsvp:${ev.id}:${s.id}` })) : []),
+    { type: 2, style: 5, label: 'Open op de site', url: `${SITE_URL}#/agenda/${ev.id}` }
+  ]
+}];
 
 async function remind(ev, kind, hours, rsvps, members, absences) {
   const list = remindTargets(ev, kind, rsvps, members, absences);
   if (!list.length) { console.log(`  niemand te taggen (${kind})`); return; }
   const sent = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}/messages`, 'POST', {
     content: pingText(ev, kind, hours, list),
+    components: pingButtons(ev, kind),
     allowed_mentions: { users: list.map(u => u.discord_id).filter(Boolean) }
   });
   console.log(`  getagd (${kind}, ${hours}u): ${list.map(u => u.name).join(', ')}`);
@@ -213,7 +223,7 @@ async function cleanPings(rsvps, now) {
         console.log(`Vermelding weggehaald: ${ev ? ev.titel : p.event_id}`);
       } else if (left.length < (p.users || []).length) {
         await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', {
-          content: pingText(ev, kind, p.hours, left), allowed_mentions: { parse: [] }
+          content: pingText(ev, kind, p.hours, left), components: pingButtons(ev, kind), allowed_mentions: { parse: [] }
         });
         await sbUpdate('agenda_pings', `message_id=eq.${p.message_id}`, { users: left });
         console.log(`Vermelding ingekort (${left.length} over): ${ev.titel}`);
@@ -327,14 +337,15 @@ async function main() {
   await cleanPings(rsvps, now);
 }
 
-// Volgorde in het kanaal = volgorde van de datum. Komt er een activiteit tussen (later aangemaakt, maar vroeger),
-// dan worden de activiteiten die erna horen opnieuw gepost (nieuw bericht, oud weg). Antwoorden staan in de database,
+// Volgorde in het kanaal: de EERSTVOLGENDE activiteit staat ONDERAAN (vlak boven het typvak, die zie je meteen),
+// de verste bovenaan. Staat er een bericht verkeerd (bv. nieuwe activiteit die later valt dan de rest), dan worden
+// de berichten die eronder horen opnieuw gepost (nieuw bericht, oud weg). Antwoorden staan in de database,
 // dus er gaat niets verloren; de knoppen werken via event_id. Enkel open (nog niet begonnen) activiteiten.
 async function reorder(events, rsvps, members, now) {
   const posts = await sb('agenda_discord?select=*&closed=eq.false');
   const byEvent = new Map(posts.filter(p => p.channel_id === DISCORD_AGENDA_CHANNEL_ID).map(p => [p.event_id, p]));
   const open = events.filter(ev => byEvent.has(ev.id) && now < startOf(ev))
-    .sort((a, b) => startOf(a) - startOf(b) || String(a.created_at).localeCompare(String(b.created_at)));
+    .sort((a, b) => startOf(b) - startOf(a) || String(b.created_at).localeCompare(String(a.created_at)));
   // langste begin van de lijst dat al in de juiste volgorde staat (bericht-ID's = tijdstip van posten)
   let keep = 0, last = 0n;
   for (const ev of open) { const id = BigInt(byEvent.get(ev.id).message_id); if (id < last) break; last = id; keep++; }
