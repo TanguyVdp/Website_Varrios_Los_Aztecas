@@ -11,7 +11,7 @@
 //     - 2u voor de start: wie "aanwezig" antwoordde ("@bob @mike — Wapenveiling begint over 2 uur")
 //     Bijgehouden in agenda_pings: wie intussen antwoordt (of niet meer aanwezig is) gaat eruit zonder opnieuw
 //     getagd te worden; activiteit verwijderd → bericht weg. Vereist supabase/update-v2-agenda-tags.sql.
-//  4. Activiteit begonnen → knoppen uit; 12u na de start → bericht weg uit het kanaal. Activiteit verwijderd → bericht op "geannuleerd".
+//  4. Activiteit begonnen → knoppen uit; 12u na de start → bericht weg uit het kanaal. Activiteit verwijderd → bericht meteen weg.
 //     Berichten staan in volgorde van de datum: komt er een activiteit tussen, dan worden de latere opnieuw gepost.
 //  5. Mededelingen van de Boss → bericht in het mededelingen-kanaal (enkel met het vinkje "Tag in Discord"
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
@@ -238,19 +238,15 @@ async function main() {
   const byEvent = new Map(posts.map(p => [p.event_id, p]));
   const eventIds = new Set(events.map(e => e.id));
 
-  // verwijderde activiteiten → bericht op "geannuleerd"
+  // verwijderde activiteiten → bericht meteen weg uit het kanaal (de tags ruimt cleanPings op)
   for (const p of posts) {
     if (eventIds.has(p.event_id) || p.closed) continue;
     const still = await sb(`events?select=id&id=eq.${p.event_id}`);
     if (still.length) continue;   // bestaat nog, maar is ouder dan gisteren
-    try {
-      await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', {
-        content: '❌ **Deze activiteit is geannuleerd.**', components: [],
-        embeds: [{ title: 'Geannuleerd', description: 'De Boss heeft deze activiteit uit de agenda gehaald.', color: 0x6b7280 }]
-      });
-    } catch (e) { console.log(`Annuleren bericht ${p.message_id}: ${e.message}`); }
+    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
+    catch (e) { if (e.status !== 404) { console.log(`Bericht van verwijderde activiteit ${p.message_id}: ${e.message}`); continue; } }
     await sbDelete('agenda_discord', `event_id=eq.${p.event_id}`);
-    console.log(`Geannuleerd: ${p.event_id}`);
+    console.log(`Verwijderde activiteit — bericht weg: ${p.event_id}`);
   }
 
   // afgelopen activiteit: 12u na de start het bericht uit het kanaal halen (op de site blijft ze in de kalender staan)
