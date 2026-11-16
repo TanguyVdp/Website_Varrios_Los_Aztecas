@@ -527,15 +527,18 @@ async function ledenKanaal() {
 }
 
 function ledenTekst(users, emo) {
-  const leden = users.filter(u => String(u.name || '').trim().toLowerCase() !== 'gangpot');
+  // alfabetisch binnen elke rang; geen lege regels tussen de blokken (zoals de lijst van Stijn)
+  const leden = users.filter(u => String(u.name || '').trim().toLowerCase() !== 'gangpot')
+    .map(u => ({ ...u, naam: naamNet(u.name) }))
+    .sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
   const rangVan = u => RANK_MIGRATE[u.rank] || u.rank;
   const blokken = RANGEN.map(([id, es, nl]) => {
-    const namen = leden.filter(u => rangVan(u) === id).map(u => `- ${naamNet(u.name)}`);
-    return [`### ${emo[id] ? emo[id] + ' ' : ''}\\|\\| ${es} - ${nl}`, ...namen].join('\n');
+    const namen = leden.filter(u => rangVan(u) === id).map(u => `- ${u.naam}`);
+    return [`## ${emo[id] ? emo[id] + ' ' : ''}\\|\\| ${es} - ${nl}`, ...namen].join('\n');
   });
   const zonder = leden.filter(u => !RANGEN.some(([id]) => id === rangVan(u)));
-  if (zonder.length) blokken.push(['### Nog geen rang', ...zonder.map(u => `- ${naamNet(u.name)}`)].join('\n'));
-  return `${blokken.join('\n\n')}\n\n-# Leden totaal: ${leden.length}/${MAX_LEDEN} · wordt automatisch bijgewerkt vanuit de website`;
+  if (zonder.length) blokken.push(['## Nog geen rang', ...zonder.map(u => `- ${u.naam}`)].join('\n'));
+  return `${blokken.join('\n')}\n\n-# Leden totaal: ${leden.length}/${MAX_LEDEN} · wordt automatisch bijgewerkt vanuit de website`;
 }
 
 async function ledenlijst() {
