@@ -17,6 +17,7 @@
 //     wordt de rol @Varrios Los Aztecas getagd, via DISCORD_MEDEDELINGEN_ROLE_ID);
 //     mededeling gewijzigd → bericht bijgewerkt; verwijderd op de site (uit de lobby) → het bericht BLIJFT in Discord.
 //  6. Amfi-tickets → één bericht per ticket in het lead-kanaal (DISCORD_AMFI_CHANNEL_ID), bijgewerkt als de status verandert.
+//  7. Leden-lijst → één bericht in #leden-lijst met alle leden per rang (uit de Ledenlijst op de site), bijgewerkt bij wijzigingen.
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -480,7 +481,93 @@ async function amfi() {
   }
 }
 
-// agenda, mededelingen en amfi los van elkaar: een fout in het ene stopt het andere niet
-const results = await Promise.allSettled([main(), notices(), amfi()]);
+// ---------- leden-lijst: één bericht met alle leden per rang ----------
+// Bron = de Ledenlijst op de site (users.rank, volgorde = sort_order). Kanaal: DISCORD_LEDENLIJST_CHANNEL_ID,
+// of anders het kanaal met "leden-lijst" in de naam op dezelfde server als de agenda.
+// Het bot-bericht wordt teruggevonden in het kanaal (geen tabel nodig) en enkel aangepast als er iets veranderd is.
+// Rang-logo's = emoji's van de bot zelf (application emojis, uit .github/assets/rangen/<id>.png), 1× geüpload.
+// ⚠️ Volgorde en ids gelijk houden met App.RANKS in assets/js/config.js.
+const RANGEN = [
+  ['oprichter', 'Fundador', 'Oprichter'], ['kolonel', 'Coronel', 'Kolonel'], ['generaal', 'General', 'Generaal'],
+  ['adviseur', 'Asesor', 'Adviseur'], ['kapitein', 'Capitán', 'Kapitein'], ['strateeg', 'Estratega', 'Strateeg'],
+  ['coordinator', 'Coordinador', 'Coördinator'], ['veteraan', 'Veterano', 'Veteraan'], ['broeder', 'Hermano', 'Broeder'],
+  ['lid', 'Miembro', 'Lid'], ['koerier', 'Mensajero', 'Koerier']
+];
+const RANK_MIGRATE = { boss: 'oprichter', underboss: 'kolonel', capo: 'kapitein', veterano: 'veteraan', soldado: 'lid', prospect: 'koerier' };
+const MAX_LEDEN = 25;
+const naamNet = n => String(n || '?').trim().replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+
+async function rangEmojis() {
+  const app = await discord('/applications/@me');
+  const have = (await discord(`/applications/${app.id}/emojis`)).items || [];
+  const out = {};
+  const { readFile } = await import('node:fs/promises');
+  for (const [id] of RANGEN) {
+    const name = `vla_${id}`;
+    let e = have.find(x => x.name === name);
+    if (!e) {
+      try {
+        const png = await readFile(new URL(`../assets/rangen/${id}.png`, import.meta.url));
+        e = await discord(`/applications/${app.id}/emojis`, 'POST', { name, image: `data:image/png;base64,${png.toString('base64')}` });
+        console.log(`Rang-emoji geüpload: ${name}`);
+      } catch (err) { console.log(`Rang-emoji ${name}: ${err.message}`); }
+    }
+    if (e) out[id] = `<:${name}:${e.id}>`;
+  }
+  return out;
+}
+
+async function ledenKanaal() {
+  const vast = String(process.env.DISCORD_LEDENLIJST_CHANNEL_ID || '').trim();
+  if (vast) return vast;
+  const agenda = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}`);
+  const chans = await discord(`/guilds/${agenda.guild_id}/channels`);
+  const c = chans.find(ch => ch.type === 0 && /leden-?lijst/i.test(ch.name));
+  return c ? c.id : null;
+}
+
+function ledenTekst(users, emo) {
+  const leden = users.filter(u => String(u.name || '').trim().toLowerCase() !== 'gangpot');
+  const rangVan = u => RANK_MIGRATE[u.rank] || u.rank;
+  const blokken = RANGEN.map(([id, es, nl]) => {
+    const namen = leden.filter(u => rangVan(u) === id).map(u => `- ${naamNet(u.name)}`);
+    return [`### ${emo[id] ? emo[id] + ' ' : ''}\\|\\| ${es} - ${nl}`, ...namen].join('\n');
+  });
+  const zonder = leden.filter(u => !RANGEN.some(([id]) => id === rangVan(u)));
+  if (zonder.length) blokken.push(['### Nog geen rang', ...zonder.map(u => `- ${naamNet(u.name)}`)].join('\n'));
+  return `${blokken.join('\n\n')}\n\n-# Leden totaal: ${leden.length}/${MAX_LEDEN} · wordt automatisch bijgewerkt vanuit de website`;
+}
+
+async function ledenlijst() {
+  try { await ledenlijstBijwerken(); }
+  catch (e) {
+    if (e.status === 403) { console.log('Leden-lijst: de bot mag niet lezen/sturen in het leden-lijst-kanaal — geef hem daar toegang.'); return; }
+    throw e;
+  }
+}
+async function ledenlijstBijwerken() {
+  const kanaal = await ledenKanaal();
+  if (!kanaal) { console.log('Geen leden-lijst-kanaal gevonden — overgeslagen.'); return; }
+  const [users, emo, ik, berichten] = await Promise.all([
+    sb('users?select=name,rank,sort_order&order=sort_order.asc'),
+    rangEmojis(),
+    discord('/users/@me'),
+    discord(`/channels/${kanaal}/messages?limit=50`)
+  ]);
+  const content = ledenTekst(users, emo);
+  if (content.length > 2000) { console.log(`Leden-lijst te lang (${content.length} tekens) — overgeslagen.`); return; }
+  const msg = { content, allowed_mentions: { parse: [] } };
+  const mijn = berichten.find(m => m.author && m.author.id === ik.id);
+  if (!mijn) {
+    await discord(`/channels/${kanaal}/messages`, 'POST', msg);
+    console.log('Leden-lijst gepost.');
+  } else if (mijn.content !== content) {
+    await discord(`/channels/${kanaal}/messages/${mijn.id}`, 'PATCH', msg);
+    console.log('Leden-lijst bijgewerkt.');
+  }
+}
+
+// agenda, mededelingen, amfi en leden-lijst los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst()]);
 results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
 if (results.some(r => r.status === 'rejected')) process.exit(1);
