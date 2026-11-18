@@ -175,6 +175,7 @@ App.ERR = {
   LOODS_VOL: 'De loods zit vol (25 profielen).',
   ONGELDIGE_NAAM: 'Geef een geldige naam op.',
   NAAM_BESTAAT_AL: 'Die naam bestaat al.',
+  GANGPOT_NAAM: 'De naam van het gangpot-profiel kan je niet wijzigen.',
   ONGELDIGE_CODE: 'Kies een code van minstens 4 tekens.',
   ONJUISTE_CODE: 'Code klopt niet.',
   AL_GECLAIMD: 'Dit profiel is al geclaimd.',

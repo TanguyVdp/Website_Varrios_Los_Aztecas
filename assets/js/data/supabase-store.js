@@ -237,6 +237,11 @@
       await rpc('fn_set_avatar', { p_user_id: userId, p_avatar_url: url });
       await after(['users']);
     },
+    // naam wijzigen: jezelf, of als Boss iemand anders (fn_set_name, supabase/update-v2-naam-wijzigen.sql)
+    async setName(userId, name) {
+      await rpc('fn_set_name', { p_user_id: userId, p_name: String(name || '') });
+      await after(['users', 'rsvps', 'absences', 'tickets']);
+    },
 
     // ---- loods ----
     async registerInleg(userId, amount) {

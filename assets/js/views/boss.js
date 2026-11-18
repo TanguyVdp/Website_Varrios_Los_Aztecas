@@ -331,6 +331,11 @@
           <button class="btn ghost danger-text" id="pa-photo-del" ${u.avatar_url ? '' : 'disabled'}>${I('trash', 14)} Foto verwijderen</button>
         </div>
       </div>
+      ${gp ? '' : `<form class="mng-block" id="pa-name-form" autocomplete="off">
+        <span class="eyebrow">Naam</span>
+        <div class="mng-inline"><input class="input" id="pa-name" maxlength="24" value="${U.esc(u.name)}"><button class="btn ghost" type="submit">${I('pencil', 14)} Naam wijzigen</button></div>
+        <p class="dim small">Leden kunnen hun naam ook zelf wijzigen in hun profiel. Logboeken behouden de naam van toen.</p>
+      </form>`}
       ${gp ? '' : `<div class="mng-block"><span class="eyebrow">Rang</span>${rankPicker(u.rank)}</div>`}
       <div class="err" id="pa-err"></div>
       ${gp || u.owner ? '' : `<button class="btn ghost block danger-text" id="pa-del">${I('trash', 14)} Profiel verwijderen</button>`}`, modal => {
@@ -339,6 +344,15 @@
       $('#pa-photo').addEventListener('click', pick);
       $('#pa-photo-pick').addEventListener('click', pick);
       $('#pa-photo-del').addEventListener('click', e => C.busy(e.currentTarget, async () => { await App.store.setAvatar(u.id, null); C.modal.close(); C.toast('Profielfoto verwijderd'); }));
+      $('#pa-name-form')?.addEventListener('submit', e => {
+        e.preventDefault();
+        const nieuw = $('#pa-name').value.trim().replace(/\s+/g, ' ');
+        if (nieuw === u.name) return;
+        C.busy(e.currentTarget.querySelector('button[type=submit]'), async () => {
+          try { const oud = u.name; await App.store.setName(u.id, nieuw); C.modal.close(); C.toast(`${U.esc(oud)} heet nu ${U.esc(nieuw)}`); }
+          catch (ex) { $('#pa-err').textContent = U.friendlyError(ex); }
+        });
+      });
       modal.querySelectorAll('[data-rank]').forEach(b => b.addEventListener('click', () => C.busy(b, async () => {
         try {
           await App.store.bossSetRank(u.id, b.dataset.rank);

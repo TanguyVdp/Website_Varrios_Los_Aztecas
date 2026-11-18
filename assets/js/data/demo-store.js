@@ -332,6 +332,22 @@
       if (dataUrl && (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/') || dataUrl.length > 250000)) throw E('ONGELDIGE_FOTO');
       u.avatar_url = dataUrl || null; commit();
     },
+    // naam wijzigen (zoals fn_set_name): 2–24 tekens, uniek, niet voor/naar "gangpot";
+    // ook in agenda-aanmeldingen, afwezigheden en open amfi-tickets — logboeken behouden de oude naam
+    async setName(userId, name) {
+      await latency();
+      const u = userById(userId);
+      name = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+      if (L.isGangpot(u)) throw E('GANGPOT_NAAM');
+      if (name.length < 2 || name.toLowerCase() === App.RULES.GANGPOT_NAME) throw E('ONGELDIGE_NAAM');
+      if (state.users.some(x => x.id !== u.id && x.name.trim().toLowerCase() === name.toLowerCase())) throw E('NAAM_BESTAAT_AL');
+      u.name = name;
+      (state.rsvps || []).forEach(r => { if (r.user_id === u.id) r.user_name = name; });
+      (state.absences || []).forEach(a => { if (a.user_id === u.id) a.user_name = name; });
+      (state.tickets || []).forEach(t => { if (t.user_id === u.id && (t.status === 'wachtrij' || t.status === 'bezig')) t.user_name = name; });
+      commit();
+      return name;
+    },
 
     // ---- loods ----
     async registerInleg(userId, amount) {

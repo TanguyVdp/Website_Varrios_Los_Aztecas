@@ -111,6 +111,12 @@
         <div><span>Tegoed</span><b class="mono">${U.num(mine.tegoed)}</b></div>
         <div><span>Ingelegd</span><b class="mono">${U.num(me.total_ingelegd)}</b></div>
       </div>` : ''}
+      ${L.isGangpot(me) ? '' : `<form class="mng-block" id="pm-name-form" autocomplete="off">
+        <span class="eyebrow">Naam</span>
+        <div class="mng-inline"><input class="input" id="pm-name" maxlength="24" value="${U.esc(me.name)}" placeholder="bv. Bob V."><button class="btn ghost" type="submit">${I('pencil', 14)} Wijzigen</button></div>
+        <div class="err" id="pm-name-err"></div>
+        <p class="dim small">Zo sta je overal op de site, in de agenda en in de leden-lijst op Discord. Logboeken behouden de naam van toen.</p>
+      </form>`}
       <div class="mng-block">
         <span class="eyebrow">Profielfoto</span>
         <div class="row-2">
@@ -138,6 +144,15 @@
       $('#pm-photo').addEventListener('click', pick);
       $('#pm-photo-pick').addEventListener('click', pick);
       $('#pm-photo-del').addEventListener('click', e => C.busy(e.currentTarget, async () => { await store.setAvatar(me.id, null); C.modal.close(); C.toast('Profielfoto verwijderd'); }));
+      $('#pm-name-form')?.addEventListener('submit', e => {
+        e.preventDefault();
+        const nieuw = $('#pm-name').value.trim().replace(/\s+/g, ' ');
+        if (nieuw === me.name) { C.modal.close(); return; }
+        C.busy(e.currentTarget.querySelector('button[type=submit]'), async () => {
+          try { await store.setName(me.id, nieuw); C.modal.close(); C.toast(`Je heet nu ${U.esc(nieuw)}`); }
+          catch (ex) { $('#pm-name-err').textContent = U.friendlyError(ex); }
+        });
+      });
       $('#pm-act')?.addEventListener('click', () => { const on = !App.actingAs; C.modal.close(); App.actAsGangpot(on); C.toast(on ? 'Je werkt nu als gangpot' : 'Terug op je eigen account'); });
       $('#pm-logout').addEventListener('click', () => { C.modal.close(); App.session.clear(); C.toast('Uitgelogd'); });
       $('#pm-reset')?.addEventListener('click', async () => { await store.resetDemo(); C.modal.close(); App.session.clear(); C.toast('Demo-data gereset'); });
