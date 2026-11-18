@@ -24,7 +24,8 @@ App.RULES = {
   RATIO_IN: 2, RATIO_OUT: 1,            // leden: 2 planten -> 1 zakje
   LEGACY_RATIO_IN: 3,                   // oude ratio, voor bevroren legacy_zakjes
   KLANT_RATIO_IN: 4, KLANT_RATIO_OUT: 1,// klanten swappen: 4 -> 1 zakje (meteen mee)
-  MAX_MOMENTEEL_INLEG: 6000,            // max planten per persoon tegelijk onverwerkt
+  MAX_MOMENTEEL_INLEG: 6000,            // standaard max planten per persoon tegelijk onverwerkt (Boss kan het aanpassen: loods_baseline.max_onverwerkt)
+  MAX_INLEG_MIN: 100, MAX_INLEG_MAX: 100000,   // grenzen voor die instelling
   MAX_USERS: 25,
   GANGPOT_NAME: 'gangpot',
   GANGPOT_DEEL: 0,                      // 0 = geen afroming meer: alles gaat naar wie inlegt (was 5 = 1 op 5 naar de gangpot)
@@ -176,6 +177,7 @@ App.ERR = {
   ONGELDIGE_NAAM: 'Geef een geldige naam op.',
   NAAM_BESTAAT_AL: 'Die naam bestaat al.',
   GANGPOT_NAAM: 'De naam van het gangpot-profiel kan je niet wijzigen.',
+  ONGELDIGE_MAX_INLEG: 'Kies een maximum tussen 100 en 100.000 planten.',
   ONGELDIGE_CODE: 'Kies een code van minstens 4 tekens.',
   ONJUISTE_CODE: 'Code klopt niet.',
   AL_GECLAIMD: 'Dit profiel is al geclaimd.',

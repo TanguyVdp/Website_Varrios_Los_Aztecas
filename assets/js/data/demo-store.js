@@ -355,7 +355,7 @@
       amount = posInt(amount);
       const u = userById(userId);
       const p = L.snapshot(state).perUser.get(u.id);
-      if (!p.gangpot && p.momInleg + amount > R.MAX_MOMENTEEL_INLEG) throw E('MAX_ONVERWERKT_BEREIKT');
+      if (!p.gangpot && p.momInleg + amount > L.maxInleg(state.baseline)) throw E('MAX_ONVERWERKT_BEREIKT');
       const split = applyInleg(state, u, amount, iso(Date.now()));
       commit(); return split;
     },
@@ -404,6 +404,10 @@
       if (patch.batch_size !== undefined || patch.batch_minutes !== undefined) {
         const bs = Number(patch.batch_size ?? b.batch_size), bm = Number(patch.batch_minutes ?? b.batch_minutes);
         if (!(bs > 0) || !(bm > 0)) throw E('ONGELDIGE_BATCH');
+      }
+      if (patch.max_onverwerkt !== undefined) {
+        const m = Number(patch.max_onverwerkt);
+        if (!Number.isInteger(m) || m < R.MAX_INLEG_MIN || m > R.MAX_INLEG_MAX) throw E('ONGELDIGE_MAX_INLEG');
       }
       if (patch.paused === true && !b.paused) patch.paused_at = iso(Date.now());
       if (patch.paused === false && b.paused) {

@@ -5,12 +5,12 @@
   const ui = { action: 'inleg', queue: 'active', feed: 'all', feedLimit: 12 };
 
   // ---------- blokken ----------
-  function hero({ me, mine }) {
+  function hero({ me, mine, snap }) {
     const inVerwerking = Math.max(0, mine.tegoed - mine.momTegoed);
     const cap = mine.gangpot
       ? `<div class="cap"><div class="cap-row"><span>Onverwerkt in de loods</span><b class="mono">${U.num(mine.momInleg)}</b></div>
          <p class="muted small">Gangpot heeft geen limiet op onverwerkte voorraad.</p></div>`
-      : `<div class="cap"><div class="cap-row"><span>Onverwerkt in de loods</span><b class="mono ${mine.level}">${U.num(mine.momInleg)}<span class="dim"> / ${U.num(R.MAX_MOMENTEEL_INLEG)}</span></b></div>
+      : `<div class="cap"><div class="cap-row"><span>Onverwerkt in de loods</span><b class="mono ${mine.level}">${U.num(mine.momInleg)}<span class="dim"> / ${U.num(snap.maxInleg)}</span></b></div>
          ${C.meter(mine.ratio, mine.level)}
          <p class="muted small">${mine.ruimte <= 0 ? `<span class="danger">Limiet bereikt</span> — wacht tot de wachtrij meer verwerkt.` : `Nog ruimte voor <b class="mono lime">${U.num(mine.ruimte)}</b> planten. Groeit vanzelf aan naarmate de wachtrij verwerkt.`}</p></div>`;
     return `

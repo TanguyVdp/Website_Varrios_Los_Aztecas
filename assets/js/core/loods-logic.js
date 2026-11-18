@@ -108,6 +108,12 @@
     return { deposits: [...perDeposit.values()], batches };
   };
 
+  // max planten per persoon tegelijk onverwerkt: ingesteld door de Boss (loods_baseline.max_onverwerkt), anders App.RULES
+  L.maxInleg = baseline => {
+    const v = Number(baseline && baseline.max_onverwerkt);
+    return v > 0 ? v : R.MAX_MOMENTEEL_INLEG;
+  };
+
   // tijdens onderhoud (paused) staat de wachtrij-klok stil op paused_at
   L.nowForQueue = baseline => (baseline.paused && baseline.paused_at) ? new Date(baseline.paused_at) : new Date();
 
@@ -116,11 +122,12 @@
    *  - zakjes       = totaal ooit toegekend (instant bij inleg)
    *  - tegoed       = zakjes - opgehaald
    *  - momTegoed    = wat de wachtrij al écht verwerkt heeft - opgehaald  (= wat je NU kan ophalen)
-   *  - momInleg     = planten van jou die nog niet verwerkt zijn (max 6000, behalve gangpot)
+   *  - momInleg     = planten van jou die nog niet verwerkt zijn (max = maxInleg, standaard 6000; gangpot: geen limiet)
    */
   L.snapshot = state => {
     const b = { ...R.BASELINE_DEFAULT, ...state.baseline };
     const now = L.nowForQueue(b);
+    const maxInleg = L.maxInleg(b);
     const queue = L.computeQueue(L.buildPostCutoverLog(state.log, state.users, b.ratio_cutover_at), b);
 
     const verwerkt = new Map();
@@ -138,10 +145,10 @@
       const momInleg = Math.max(0, u.total_ingelegd - (legacy * R.LEGACY_RATIO_IN + done * R.RATIO_IN));
       const momTegoed = Math.max(0, totaalVerwerkt - u.opgehaald);
       const gangpot = L.isGangpot(u);
-      const ratio = gangpot ? 0 : momInleg / R.MAX_MOMENTEEL_INLEG;
+      const ratio = gangpot ? 0 : momInleg / maxInleg;
       perUser.set(u.id, {
         user: u, zakjes, tegoed: zakjes - u.opgehaald, momInleg, momTegoed, gangpot, ratio,
-        ruimte: gangpot ? Infinity : Math.max(0, R.MAX_MOMENTEEL_INLEG - momInleg),
+        ruimte: gangpot ? Infinity : Math.max(0, maxInleg - momInleg),
         level: gangpot ? 'ok' : ratio >= 1 ? 'danger' : ratio >= 0.75 ? 'warn' : 'ok'
       });
       t.ingelegd += u.total_ingelegd;
@@ -160,7 +167,7 @@
     const pendingZakjes = pending.reduce((s, bt) => s + bt.zakjes, 0);
 
     return {
-      now, baseline: b, queue, perUser, totals: t,
+      now, baseline: b, queue, perUser, totals: t, maxInleg,
       queueInfo: {
         active, done, totalZakjes, pendingZakjes,
         processing: active.find(d => d.start <= now) || null,

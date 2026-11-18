@@ -248,7 +248,7 @@
       amount = posInt(amount);
       const u = userById(userId);
       const p = L.snapshot(state).perUser.get(u.id);
-      if (!p.gangpot && p.momInleg + amount > R.MAX_MOMENTEEL_INLEG) throw E('MAX_ONVERWERKT_BEREIKT');
+      if (!p.gangpot && p.momInleg + amount > L.maxInleg(state.baseline)) throw E('MAX_ONVERWERKT_BEREIKT');
       const split = L.splitInleg(u, amount, state.users.some(L.isGangpot));
       await rpc('fn_register_inleg', { p_user_id: userId, p_amount: amount, p_huidig_momenteel_inleg: p.momInleg });
       await after(['users', 'log']);
@@ -284,6 +284,8 @@
     async setBaseline(patch, byName) {
       const b = state.baseline;
       if (patch.paused !== undefined) await rpc('fn_set_maintenance', { p_paused: !!patch.paused, p_boss_pin_hash: needBoss() });
+      // max planten onverwerkt per persoon (supabase/update-v2-max-onverwerkt.sql)
+      if (patch.max_onverwerkt !== undefined) await rpc('fn_set_max_onverwerkt', { p_max: Math.round(Number(patch.max_onverwerkt)) });
       if (['batch_size', 'batch_minutes', 'offset_minutes', 'zakjes_correctie'].some(k => patch[k] !== undefined)) {
         const bs = Number(patch.batch_size ?? b.batch_size), bm = Number(patch.batch_minutes ?? b.batch_minutes);
         if (!(bs > 0) || !(bm > 0)) throw E('ONGELDIGE_BATCH');

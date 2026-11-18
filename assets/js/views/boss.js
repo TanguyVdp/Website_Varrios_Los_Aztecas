@@ -128,6 +128,16 @@
           </ul>
           <button class="btn ${b.paused ? 'primary' : 'warn'}" id="bl-pause">${I(b.paused ? 'play' : 'pause')} ${b.paused ? 'Wachtrij hervatten' : 'Wachtrij pauzeren'}</button>
         </section>
+        <section class="card">
+          ${C.cardHead('Limiet per persoon', 'warehouse')}
+          <p class="muted">Hoeveel planten één persoon tegelijk <b>onverwerkt</b> in de loods mag hebben. Wat verwerkt is, telt niet meer mee. Het gangpot-profiel heeft geen limiet.</p>
+          <form class="stack" id="bl-max-form">
+            <label class="field"><span>Max planten onverwerkt <em>standaard ${U.num(R.MAX_MOMENTEEL_INLEG)}</em></span><input class="input mono" id="bl-max" type="number" min="${R.MAX_INLEG_MIN}" max="${R.MAX_INLEG_MAX}" step="100" value="${snap.maxInleg}"></label>
+            <div class="chips">${[2000, 4000, 6000, 8000, 10000].map(v => `<button type="button" class="chip" data-max="${v}">${U.num(v)}</button>`).join('')}</div>
+            <div class="err" id="bl-max-err"></div>
+            <button class="btn primary" type="submit">Opslaan</button>
+          </form>
+        </section>
       </div>`;
   }
 
@@ -809,6 +819,19 @@
           const k = ctx.state.customers.find(x => x.id === b.dataset.kdel);
           if (k) confirmModal(`Klant ${U.esc(k.name)} verwijderen?`, 'De geschiedenis blijft bewaard (als "verwijderde klant"), enkel de klantfiche verdwijnt.', 'Verwijderen', async () => { await App.store.bossDeleteKlant(k.id); C.toast('Klant verwijderd'); });
         }));
+        const maxForm = root.querySelector('#bl-max-form');
+        maxForm?.querySelectorAll('[data-max]').forEach(b => b.addEventListener('click', () => { root.querySelector('#bl-max').value = b.dataset.max; }));
+        maxForm?.addEventListener('submit', e => {
+          e.preventDefault();
+          C.busy(maxForm.querySelector('button[type=submit]'), async () => {
+            try {
+              const v = Math.round(Number(root.querySelector('#bl-max').value));
+              if (!Number.isInteger(v) || v < R.MAX_INLEG_MIN || v > R.MAX_INLEG_MAX) throw new Error('ONGELDIGE_MAX_INLEG');
+              await App.store.setBaseline({ max_onverwerkt: v }, who);
+              C.toast(`Limiet: max ${U.num(v)} planten onverwerkt per persoon`);
+            } catch (ex) { root.querySelector('#bl-max-err').textContent = U.friendlyError(ex); }
+          });
+        });
         const pause = root.querySelector('#bl-pause');
         pause?.addEventListener('click', () => C.busy(pause, async () => {
           const paused = !ctx.snap.baseline.paused;
