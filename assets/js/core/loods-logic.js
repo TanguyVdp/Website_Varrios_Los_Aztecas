@@ -121,8 +121,12 @@
    * Begrippen (zelfde als in de oude app):
    *  - zakjes       = totaal ooit toegekend (instant bij inleg)
    *  - tegoed       = zakjes - opgehaald
-   *  - momTegoed    = wat de wachtrij al écht verwerkt heeft - opgehaald  (= wat je NU kan ophalen)
-   *  - momInleg     = planten van jou die nog niet verwerkt zijn (max = maxInleg, standaard 6000; gangpot: geen limiet)
+   *  - wacht        = zakjes van jou die nog in de wachtrij zitten (batches die nog niet klaar zijn)
+   *  - momTegoed    = tegoed - wacht  (= wat je NU kan ophalen)
+   *  - momInleg     = planten van jou die nog niet verwerkt zijn = wacht × 2 (max = maxInleg, standaard 6000; gangpot: geen limiet)
+   * Sinds 22/11/2026 vanuit "wat zit er nog in de wachtrij" i.p.v. "wat heeft de wachtrij al verwerkt": zo telt een
+   * Boss-correctie (die het totaal aanpast zonder inleg-regel) en het halve zakje van een oneven inleg meteen als klaar,
+   * in plaats van voor altijd vast te zitten.
    */
   L.snapshot = state => {
     const b = { ...R.BASELINE_DEFAULT, ...state.baseline };
@@ -130,24 +134,23 @@
     const maxInleg = L.maxInleg(b);
     const queue = L.computeQueue(L.buildPostCutoverLog(state.log, state.users, b.ratio_cutover_at), b);
 
-    const verwerkt = new Map();
+    const inWachtrij = new Map();
     queue.batches.forEach(bt => {
-      if (bt.end <= now) Object.entries(bt.byUser).forEach(([k, c]) => verwerkt.set(k, (verwerkt.get(k) || 0) + c));
+      if (bt.end > now) Object.entries(bt.byUser).forEach(([k, c]) => inWachtrij.set(k, (inWachtrij.get(k) || 0) + c));
     });
 
     const perUser = new Map();
     const t = { ingelegd: 0, toegekend: 0, opgehaald: 0, plantenInLoods: 0, zakjesKlaarModel: 0 };
     state.users.forEach(u => {
-      const legacy = u.legacy_zakjes || 0;
-      const done = verwerkt.get(u.id) || 0;
       const zakjes = L.zakjesVoor(u);
-      const totaalVerwerkt = legacy + done;
-      const momInleg = Math.max(0, u.total_ingelegd - (legacy * R.LEGACY_RATIO_IN + done * R.RATIO_IN));
-      const momTegoed = Math.max(0, totaalVerwerkt - u.opgehaald);
+      const tegoed = zakjes - u.opgehaald;
+      const wacht = Math.min(Math.max(0, tegoed), inWachtrij.get(u.id) || 0);
+      const momInleg = wacht * R.RATIO_IN;
+      const momTegoed = Math.max(0, tegoed - wacht);
       const gangpot = L.isGangpot(u);
       const ratio = gangpot ? 0 : momInleg / maxInleg;
       perUser.set(u.id, {
-        user: u, zakjes, tegoed: zakjes - u.opgehaald, momInleg, momTegoed, gangpot, ratio,
+        user: u, zakjes, tegoed, wacht, momInleg, momTegoed, gangpot, ratio,
         ruimte: gangpot ? Infinity : Math.max(0, maxInleg - momInleg),
         level: gangpot ? 'ok' : ratio >= 1 ? 'danger' : ratio >= 0.75 ? 'warn' : 'ok'
       });
