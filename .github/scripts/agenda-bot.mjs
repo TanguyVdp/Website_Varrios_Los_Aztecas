@@ -19,6 +19,8 @@
 //     mededeling gewijzigd → bericht bijgewerkt; verwijderd op de site (uit de lobby) → het bericht BLIJFT in Discord.
 //  6. Amfi-tickets → één bericht per ticket in het lead-kanaal (DISCORD_AMFI_CHANNEL_ID), bijgewerkt als de status verandert.
 //  7. Leden-lijst → één bericht in #leden-lijst met alle leden per rang (uit de Ledenlijst op de site), bijgewerkt bij wijzigingen.
+//  8. Afwezigheid → #afwezigheid: knop "Afwezigheid melden", meldingen (ook van de site) met Goedkeuren/Afkeuren voor de Boss,
+//     en de rol "Afwezig" zolang iemand afwezig is (zie afwezigheid() onderaan).
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -524,14 +526,20 @@ async function rangEmojis() {
   return out;
 }
 
-async function ledenKanaal() {
-  const vast = String(process.env.DISCORD_LEDENLIJST_CHANNEL_ID || '').trim();
-  if (vast) return vast;
+// de server (guild) van het agenda-kanaal + al zijn kanalen — 1× per run opgehaald, gedeeld door leden-lijst en afwezigheid
+let serverInfo = null;
+const server = () => serverInfo || (serverInfo = (async () => {
   const agenda = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}`);
-  const chans = await discord(`/guilds/${agenda.guild_id}/channels`);
-  const c = chans.find(ch => ch.type === 0 && /leden-?lijst/i.test(ch.name));
+  return { guildId: agenda.guild_id, channels: await discord(`/guilds/${agenda.guild_id}/channels`) };
+})());
+// kanaal-ID uit een secret, of anders het tekstkanaal waarvan de naam past bij re
+async function kanaalOpNaam(envNaam, re) {
+  const vast = String(process.env[envNaam] || '').trim();
+  if (vast) return vast;
+  const c = (await server()).channels.find(ch => ch.type === 0 && re.test(ch.name));
   return c ? c.id : null;
 }
+const ledenKanaal = () => kanaalOpNaam('DISCORD_LEDENLIJST_CHANNEL_ID', /leden-?lijst/i);
 
 function ledenTekst(users, emo) {
   // alfabetisch binnen elke rang; geen lege regels tussen de blokken (zoals de lijst van Stijn)
@@ -577,7 +585,163 @@ async function ledenlijstBijwerken() {
   }
 }
 
-// agenda, mededelingen, amfi en leden-lijst los van elkaar: een fout in het ene stopt het andere niet
-const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst()]);
+// ---------- afwezigheid: #afwezigheid + rol "Afwezig" ----------
+// 1. Onderaan het kanaal staat altijd één bericht met de knop "Afwezigheid melden" (afw:open → Edge Function:
+//    reden kiezen → venster van/tot → fn_add_absence → melding in het kanaal).
+// 2. Meldingen van de site (laatste 24u) worden ook in het kanaal gezet; status/gegevens gewijzigd → bericht bijgewerkt;
+//    melding verwijderd op de site → bericht weg. Bijgehouden in absence_discord (supabase/update-v2-discord-afwezig.sql).
+// 3. Rol "Afwezig" (wordt aangemaakt als hij nog niet bestaat): wie vandaag afwezig is (van ≤ vandaag ≤ tot, niet afgekeurd)
+//    krijgt hem, anders gaat hij eraf. Bestaat er een rol "Aanwezig", dan krijgt iedereen die NIET afwezig is die rol.
+//    Enkel voor profielen met een Discord-ID. De bot heeft "Rollen beheren" nodig en zijn eigen rol moet hoger staan.
+// absenceMessage() is een kopie van die in de Edge Function — hou ze gelijk.
+const AFW_REDENEN = {
+  vakantie: { label: 'Vakantie', emoji: '🏖️' },
+  werk: { label: 'Werk / school', emoji: '💼' },
+  ziek: { label: 'Ziek', emoji: '🤒' },
+  familie: { label: 'Familie', emoji: '❤️' },
+  andere: { label: 'Andere', emoji: '✏️' }
+};
+const AFW_STATUS = {
+  aangevraagd: { label: 'Te keuren', emoji: '⏳', color: 0xf0b24e },
+  goedgekeurd: { label: 'Goedgekeurd', emoji: '✅', color: 0x9be15d },
+  afgekeurd: { label: 'Afgekeurd', emoji: '❌', color: 0xef4444 }
+};
+const datumBE = d => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+function absenceMessage(a, discordId) {
+  const r = AFW_REDENEN[a.reden] || AFW_REDENEN.andere;
+  const s = AFW_STATUS[a.status] || AFW_STATUS.aangevraagd;
+  const reden = a.reden === 'andere' ? (a.toelichting || 'Andere') : r.label + (a.toelichting ? ` — ${a.toelichting}` : '');
+  const lines = [
+    `**Naam:** ${discordId ? `<@${discordId}>` : a.user_name}`,
+    `**Begindatum:** ${datumBE(a.van)}`,
+    `**Einddatum:** ${datumBE(a.tot)}`,
+    `**Reden:** ${r.emoji} ${reden}`,
+    '',
+    `**Status:** ${s.emoji} ${s.label}${a.status !== 'aangevraagd' && a.beoordeeld_door ? ` — ${a.beoordeeld_door}` : ''}`
+  ];
+  if (a.reactie) lines.push(`💬 ${a.reactie}`);
+  return {
+    allowed_mentions: { parse: [] },
+    embeds: [{ title: `Afwezigheid — ${a.user_name}`, url: `${SITE_URL}#/afwezig`, description: lines.join('\n'), color: s.color }],
+    components: a.status === 'aangevraagd' ? [{
+      type: 1,
+      components: [
+        { type: 2, style: 3, label: 'Goedkeuren', emoji: { name: '✅' }, custom_id: `afw:ok:${a.id}` },
+        { type: 2, style: 4, label: 'Afkeuren', emoji: { name: '❌' }, custom_id: `afw:nee:${a.id}` }
+      ]
+    }] : []
+  };
+}
+const absenceSig = m => JSON.stringify([m.embeds[0].description, m.embeds[0].color, m.components.length]);
+
+const afwPanel = () => ({
+  allowed_mentions: { parse: [] },
+  embeds: [{
+    title: '📝 Afwezig melden',
+    description: 'Ben je een tijdje afwezig? Klik op **Afwezigheid melden**, kies een reden en vul in **van wanneer tot wanneer**.\n\n' +
+      '• Je melding komt hieronder en op de site; de Boss keurt ze goed.\n' +
+      '• Zolang je afwezig bent, heb je de rol **Afwezig** — na de einddatum verdwijnt die vanzelf.\n' +
+      '• Plannen veranderd? Verwijder je melding op de site.',
+    color: 0xf472b6
+  }],
+  components: [{
+    type: 1,
+    components: [
+      { type: 2, style: 1, label: 'Afwezigheid melden', emoji: { name: '📝' }, custom_id: 'afw:open' },
+      { type: 2, style: 5, label: 'Open op de site', url: `${SITE_URL}#/afwezig` }
+    ]
+  }]
+});
+const isPanel = (m, botId) => m.author && m.author.id === botId &&
+  (m.components || []).some(row => (row.components || []).some(c => c.custom_id === 'afw:open'));
+
+async function afwezigheid() {
+  const [absences, users] = await Promise.all([
+    sb('absences?select=*&order=created_at.asc'),
+    sb('users?select=id,name,discord_id')
+  ]);
+  const discordVan = new Map(users.map(u => [u.id, u.discord_id || null]));
+  const results = await Promise.allSettled([afwKanaal(absences, discordVan), afwRollen(absences, users)]);
+  results.forEach(r => { if (r.status === 'rejected') console.log(`Afwezigheid: ${r.reason && r.reason.message}`); });
+}
+
+async function afwKanaal(absences, discordVan) {
+  const kanaal = await kanaalOpNaam('DISCORD_AFWEZIG_CHANNEL_ID', /afwezig/i);
+  if (!kanaal) { console.log('Geen afwezigheid-kanaal gevonden — overgeslagen.'); return; }
+  let posts = null;
+  try { posts = await sb('absence_discord?select=*'); }
+  catch (e) { console.log('Afwezigheid-meldingen overgeslagen: voer eerst supabase/update-v2-discord-afwezig.sql uit in Supabase.'); }
+
+  if (posts) {
+    const byId = new Map(posts.map(p => [p.absence_id, p]));
+    const bestaat = new Set(absences.map(a => a.id));
+    const since = Date.now() - 24 * HOUR;
+    for (const a of absences) {
+      const msg = absenceMessage(a, discordVan.get(a.user_id)), sig = absenceSig(msg), post = byId.get(a.id);
+      if (!post) {
+        if (new Date(a.created_at).getTime() < since) continue;   // enkel nieuwe meldingen (van de site)
+        const sent = await discord(`/channels/${kanaal}/messages`, 'POST', msg);
+        await sbInsert('absence_discord', { absence_id: a.id, channel_id: kanaal, message_id: sent.id, sig });
+        console.log(`Afwezigheid gepost: ${a.user_name} ${a.van} → ${a.tot}`);
+      } else if (post.sig !== sig) {
+        try { await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'PATCH', msg); }
+        catch (e) { if (e.status !== 404) throw e; }
+        await sbUpdate('absence_discord', `absence_id=eq.${a.id}`, { sig });
+        console.log(`Afwezigheid bijgewerkt: ${a.user_name} (${a.status})`);
+      }
+    }
+    // verwijderd op de site → bericht weg
+    for (const p of posts.filter(p => !bestaat.has(p.absence_id))) {
+      try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
+      catch (e) { if (e.status !== 404) { console.log(`Afwezigheid-bericht verwijderen: ${e.message}`); continue; } }
+      await sbDelete('absence_discord', `absence_id=eq.${p.absence_id}`);
+      console.log(`Afwezigheid verwijderd op de site — bericht weg: ${p.absence_id}`);
+    }
+  }
+
+  // het meld-bericht met de knop staat altijd onderaan: is er iets na gekomen, dan opnieuw posten
+  const [ik, berichten] = await Promise.all([discord('/users/@me'), discord(`/channels/${kanaal}/messages?limit=30`)]);
+  const panels = berichten.filter(m => isPanel(m, ik.id));
+  if (panels.length === 1 && berichten[0].id === panels[0].id) return;
+  for (const p of panels) {
+    try { await discord(`/channels/${kanaal}/messages/${p.id}`, 'DELETE'); } catch (e) { if (e.status !== 404) throw e; }
+  }
+  await discord(`/channels/${kanaal}/messages`, 'POST', afwPanel());
+  console.log('Afwezigheid: meld-knop (opnieuw) onderaan gezet.');
+}
+
+async function afwRollen(absences, users) {
+  const { guildId } = await server();
+  const rollen = await discord(`/guilds/${guildId}/roles`);
+  let afw = rollen.find(r => r.name.trim().toLowerCase() === 'afwezig');
+  const aanw = rollen.find(r => r.name.trim().toLowerCase() === 'aanwezig');
+  if (!afw) {
+    afw = await discord(`/guilds/${guildId}/roles`, 'POST', { name: 'Afwezig', color: 0x95a5a6, mentionable: false, hoist: false });
+    console.log('Rol "Afwezig" aangemaakt.');
+  }
+  const vandaag = dkey(new Date());
+  const nuAfwezig = new Set(absences.filter(a => a.status !== 'afgekeurd' && a.van <= vandaag && a.tot >= vandaag).map(a => a.user_id));
+  for (const u of users.filter(x => x.discord_id && String(x.name || '').trim().toLowerCase() !== 'gangpot')) {
+    let lid;
+    try { lid = await discord(`/guilds/${guildId}/members/${u.discord_id}`); }
+    catch (e) { if (e.status === 404) continue; throw e; }   // niet (meer) op de server
+    const weg = nuAfwezig.has(u.id);
+    const zet = async (rol, aan) => {
+      if (!rol || lid.roles.includes(rol.id) === aan) return;
+      try {
+        await discord(`/guilds/${guildId}/members/${u.discord_id}/roles/${rol.id}`, aan ? 'PUT' : 'DELETE');
+        console.log(`Rol ${rol.name} ${aan ? 'gegeven aan' : 'weggehaald bij'} ${u.name}`);
+      } catch (e) {
+        if (e.status === 403) console.log(`Rol ${rol.name}: de bot mag rollen niet beheren — geef hem "Rollen beheren" en zet zijn rol boven "${rol.name}".`);
+        else throw e;
+      }
+    };
+    await zet(afw, weg);
+    await zet(aanw, !weg);
+  }
+}
+
+// agenda, mededelingen, amfi, leden-lijst en afwezigheid los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst(), afwezigheid()]);
 results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
 if (results.some(r => r.status === 'rejected')) process.exit(1);
