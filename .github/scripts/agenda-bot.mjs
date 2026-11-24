@@ -803,6 +803,17 @@ async function sollicitaties() {
   const nieuw = channels.filter(c => c.type === 0 && c.parent_id === cat && Date.now() - kanaalTijd(c.id) < 48 * HOUR);
   if (!nieuw.length) return;
   const ik = await discord('/users/@me');
+  // {rol:Naam} in de tekst → echte rol-tag (bv. {rol:Ticket Support} → @Ticket Support)
+  const rolIds = [];
+  if (/\{rol:[^}]+\}/i.test(tekst)) {
+    const rollen = await discord(`/guilds/${(await server()).guildId}/roles`);
+    tekst = tekst.replace(/\{rol:([^}]+)\}/gi, (m, naam) => {
+      const r = rollen.find(x => x.name.trim().toLowerCase() === naam.trim().toLowerCase());
+      if (!r) return `@${naam.trim()}`;
+      rolIds.push(r.id);
+      return `<@&${r.id}>`;
+    });
+  }
   for (const ch of nieuw) {
     let berichten;
     try { berichten = await discord(`/channels/${ch.id}/messages?limit=50`); }
@@ -818,7 +829,7 @@ async function sollicitaties() {
     for (let i = 0; i < delen.length; i++) {
       await discord(`/channels/${ch.id}/messages`, 'POST', {
         content: (i === 0 && wie ? `<@${wie.id}>\n` : '') + delen[i],
-        allowed_mentions: { users: wie ? [wie.id] : [] }
+        allowed_mentions: { users: wie ? [wie.id] : [], roles: rolIds }
       });
     }
     console.log(`Sollicitaties: vragenlijst gepost in #${ch.name}`);
