@@ -21,6 +21,8 @@
 //  7. Leden-lijst → één bericht in #leden-lijst met alle leden per rang (uit de Ledenlijst op de site), bijgewerkt bij wijzigingen.
 //  8. Afwezigheid → #afwezigheid: knop "Afwezigheid melden", meldingen (ook van de site) met Goedkeuren/Afkeuren voor de Boss,
 //     en de rol "Afwezig" zolang iemand afwezig is (zie afwezigheid() onderaan).
+//  9. Sollicitaties → elk nieuw ticket in de categorie "Sollicitatie ticket" (Ticket Tool) krijgt de vragenlijst
+//     uit .github/assets/sollicitatie.md (zie sollicitaties() onderaan).
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -773,7 +775,57 @@ async function afwRollen(absences, users) {
   }
 }
 
-// agenda, mededelingen, amfi, leden-lijst en afwezigheid los van elkaar: een fout in het ene stopt het andere niet
-const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst(), afwezigheid()]);
+// ---------- sollicitaties: vragenlijst in elk nieuw Ticket Tool-ticket ----------
+// Categorie = DISCORD_SOLLI_CATEGORY_ID of anders de categorie met "sollicitatie ticket" in de naam (niet "Sollicitatie Hold").
+// Elk tekstkanaal daarin dat < 48u oud is en nog geen vragenlijst heeft, krijgt de tekst uit .github/assets/sollicitatie.md
+// (met een tag van wie het ticket opende). Oudere tickets en tickets waar de vragen al (met de hand) in staan: niets.
+const SOLLI_FILE = '.github/assets/sollicitatie.md';
+const SOLLI_KLAAR = /wat is je leeftijd/i;   // staat dit al in het kanaal, dan zijn de vragen er al
+const kanaalTijd = id => Number((BigInt(id) >> 22n) + 1420070400000n);
+function stukken(tekst, max = 1900) {   // Discord: max 2000 tekens per bericht → op regels splitsen
+  const out = []; let cur = '';
+  for (const regel of tekst.split('\n')) {
+    if (cur && (cur.length + regel.length + 1) > max) { out.push(cur); cur = ''; }
+    cur = cur ? `${cur}\n${regel}` : regel;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+async function sollicitaties() {
+  const { readFile } = await import('node:fs/promises');
+  let tekst;
+  try { tekst = (await readFile(SOLLI_FILE, 'utf8')).trim(); } catch { console.log(`Sollicitaties: ${SOLLI_FILE} ontbreekt — overgeslagen.`); return; }
+  if (!tekst) return;
+  const { channels } = await server();
+  const vast = String(process.env.DISCORD_SOLLI_CATEGORY_ID || '').trim();
+  const cat = vast || (channels.find(c => c.type === 4 && /sollicitatie\s*ticket/i.test(c.name)) || {}).id;
+  if (!cat) { console.log('Sollicitaties: geen categorie "Sollicitatie ticket" gevonden — overgeslagen.'); return; }
+  const nieuw = channels.filter(c => c.type === 0 && c.parent_id === cat && Date.now() - kanaalTijd(c.id) < 48 * HOUR);
+  if (!nieuw.length) return;
+  const ik = await discord('/users/@me');
+  for (const ch of nieuw) {
+    let berichten;
+    try { berichten = await discord(`/channels/${ch.id}/messages?limit=50`); }
+    catch (e) {
+      if (e.status === 403) { console.log(`Sollicitaties: geen toegang tot #${ch.name} — geef de bot "Kanaal bekijken", "Berichten versturen" en "Berichtgeschiedenis lezen" in die tickets.`); continue; }
+      throw e;
+    }
+    if (berichten.some(m => (m.author && m.author.id === ik.id) || SOLLI_KLAAR.test(m.content || ''))) continue;
+    // wie het ticket opende: de getagde persoon in het eerste bericht van Ticket Tool
+    const eerste = berichten.filter(m => m.author && m.author.bot && m.mentions && m.mentions.length).pop();
+    const wie = eerste ? eerste.mentions.find(u => !u.bot) : null;
+    const delen = stukken(tekst);
+    for (let i = 0; i < delen.length; i++) {
+      await discord(`/channels/${ch.id}/messages`, 'POST', {
+        content: (i === 0 && wie ? `<@${wie.id}>\n` : '') + delen[i],
+        allowed_mentions: { users: wie ? [wie.id] : [] }
+      });
+    }
+    console.log(`Sollicitaties: vragenlijst gepost in #${ch.name}`);
+  }
+}
+
+// agenda, mededelingen, amfi, leden-lijst, afwezigheid en sollicitaties los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst(), afwezigheid(), sollicitaties()]);
 results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
 if (results.some(r => r.status === 'rejected')) process.exit(1);
