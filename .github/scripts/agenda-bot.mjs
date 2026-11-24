@@ -23,6 +23,7 @@
 //     en de rol "Afwezig" zolang iemand afwezig is (zie afwezigheid() onderaan).
 //  9. Sollicitaties → elk nieuw ticket in de categorie "Sollicitatie ticket" (Ticket Tool) krijgt de vragenlijst
 //     uit .github/assets/sollicitatie.md (zie sollicitaties() onderaan).
+// 10. Loods-missies → elke dag om 00u een bericht in het loods-kanaal (handelaar/skylift/terrorbite + base), zie loodsMissies().
 // De knoppen zelf worden verwerkt door de Supabase Edge Function supabase/functions/discord-agenda.
 //
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_BOT_TOKEN, DISCORD_AGENDA_CHANNEL_ID (+ optioneel SITE_URL,
@@ -858,7 +859,73 @@ async function sollicitaties() {
   }
 }
 
-// agenda, mededelingen, amfi, leden-lijst, afwezigheid en sollicitaties los van elkaar: een fout in het ene stopt het andere niet
-const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst(), afwezigheid(), sollicitaties()]);
+// ---------- loods-missies (los van de site) ----------
+// Elke dag (Belgische tijd, kort na 00u) een nieuw bericht in DISCORD_LOODS_CHANNEL_ID met de 3 missies + de base in de loods.
+// Het bericht van de vorige dag blijft staan, zonder knoppen. Knoppen → Edge Function (fn_loods_missie / fn_loods_reset).
+// Vereist supabase/update-v2-discord-loods.sql. loodsMessage() staat ook in de Edge Function — hou ze gelijk.
+const LOODS_MISSIES = [
+  { id: 'handelaar',  label: 'Loods handelaar',  kort: 'Handelaar',  base: 600, emoji: '🤝' },
+  { id: 'skylift',    label: 'Loods skylift',    kort: 'Skylift',    base: 200, emoji: '🚁' },
+  { id: 'terrorbite', label: 'Loods terrorbite', kort: 'Terrorbite', base: 0,   emoji: '✈️' },
+];
+const WEEKDAG = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+const nlNum = n => Number(n || 0).toLocaleString('nl-BE');
+const uurBE = iso => new Date(iso).toLocaleTimeString('nl-BE', { timeZone: 'Europe/Brussels', hour: '2-digit', minute: '2-digit' });
+function loodsMessage(datum, missies, base, open = true) {
+  const dag = WEEKDAG[new Date(`${datum}T12:00:00Z`).getUTCDay()];
+  const gedaan = id => missies.find(x => x.type === id);
+  const klaar = LOODS_MISSIES.filter(m => gedaan(m.id)).length;
+  const regels = LOODS_MISSIES.map((m, n) => {
+    const x = gedaan(m.id);
+    const status = x ? `✅ gedaan door ${x.discord_id ? `<@${x.discord_id}>` : `**${x.door || '?'}**`} · ${uurBE(x.at)}` : '❌ nog niet gedaan';
+    return `**${n + 1}. ${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ''}\n${status}`;
+  });
+  return {
+    content: '',
+    embeds: [{
+      title: `📦 Loods missies — ${dag} ${datum.slice(8, 10)}/${datum.slice(5, 7)}`,
+      description: `${regels.join('\n\n')}\n\n🧪 **Momenteel in loods: ${nlNum(base)} base**`,
+      color: !open ? 0x6b7280 : klaar === LOODS_MISSIES.length ? 0x22c55e : 0xf59e0b,
+      footer: { text: open ? `${klaar}/${LOODS_MISSIES.length} gedaan · elke missie 1× per dag · om 00u komt een nieuw bericht` : `Dag afgesloten · ${klaar}/${LOODS_MISSIES.length} gedaan` },
+    }],
+    components: open ? [{
+      type: 1, components: [
+        ...LOODS_MISSIES.map(m => gedaan(m.id)
+          ? { type: 2, style: 3, custom_id: `loods:m:${m.id}:${datum}`, label: `${m.kort} gedaan`, emoji: { name: '✅' }, disabled: true }
+          : { type: 2, style: 1, custom_id: `loods:m:${m.id}:${datum}`, label: m.kort, emoji: { name: m.emoji } }),
+        { type: 2, style: 4, custom_id: `loods:reset:${datum}`, label: 'Reset base', emoji: { name: '🗑️' } },
+      ],
+    }] : [],
+    allowed_mentions: { parse: [] },
+  };
+}
+async function loodsMissies() {
+  const kanaal = String(process.env.DISCORD_LOODS_CHANNEL_ID || '').trim();
+  if (!kanaal) return;
+  let posts;
+  try { posts = await sb('loods_discord?select=*&order=datum.desc&limit=14'); }
+  catch (e) { console.log('Loods-missies overgeslagen: voer eerst supabase/update-v2-discord-loods.sql uit in Supabase.'); return; }
+  const vandaag = dkey(new Date());   // TZ = Europe/Brussels (workflow)
+  const voorraad = await sb('loods_voorraad?select=base&id=eq.true');
+  const base = voorraad && voorraad[0] ? voorraad[0].base : 0;
+  // vorige dagen afsluiten: knoppen weg, grijs
+  for (const p of posts.filter(p => p.datum < vandaag && !p.gesloten)) {
+    const missies = await sb(`loods_missies?select=*&datum=eq.${p.datum}`);
+    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', loodsMessage(p.datum, missies, base, false)); }
+    catch (e) { if (e.status !== 404) throw e; }
+    await sbUpdate('loods_discord', `datum=eq.${p.datum}`, { gesloten: true });
+    console.log(`Loods-missies: ${p.datum} afgesloten`);
+  }
+  // nieuw bericht voor vandaag
+  if (!posts.some(p => p.datum === vandaag)) {
+    const missies = await sb(`loods_missies?select=*&datum=eq.${vandaag}`);
+    const sent = await discord(`/channels/${kanaal}/messages`, 'POST', loodsMessage(vandaag, missies, base, true));
+    await sbInsert('loods_discord', { datum: vandaag, channel_id: kanaal, message_id: sent.id });
+    console.log(`Loods-missies: bericht voor ${vandaag} gepost`);
+  }
+}
+
+// agenda, mededelingen, amfi, leden-lijst, afwezigheid, sollicitaties en loods los van elkaar: een fout in het ene stopt het andere niet
+const results = await Promise.allSettled([main(), notices(), amfi(), ledenlijst(), afwezigheid(), sollicitaties(), loodsMissies()]);
 results.forEach(r => { if (r.status === 'rejected') console.error(r.reason); });
 if (results.some(r => r.status === 'rejected')) process.exit(1);

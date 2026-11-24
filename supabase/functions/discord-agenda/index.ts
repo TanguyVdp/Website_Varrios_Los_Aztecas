@@ -13,6 +13,8 @@
 // buildMessage() is een kopie van die in .github/scripts/agenda-bot.mjs — hou ze gelijk.
 // Ook voor #afwezigheid: knop "Afwezigheid melden" → reden → venster (van/tot) → fn_add_absence,
 // en de Boss-knoppen Goedkeuren/Afkeuren. absenceMessage() is ook een kopie uit agenda-bot.mjs.
+// Loods-missies: knoppen Handelaar/Skylift/Terrorbite (fn_loods_missie) en Reset base (code = secret LOODS_RESET_CODE).
+// loodsMessage() is ook een kopie uit agenda-bot.mjs.
 // ============================================================
 import nacl from "npm:tweetnacl@1.0.3";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
@@ -176,6 +178,44 @@ const AFW_FOUT: Record<string, string> = {
   GEEN_REDEN: "Kies een reden.",
 };
 
+// ---------- loods-missies (kopie uit .github/scripts/agenda-bot.mjs — hou ze gelijk) ----------
+const LOODS_MISSIES = [
+  { id: "handelaar",  label: "Loods handelaar",  kort: "Handelaar",  base: 600, emoji: "🤝" },
+  { id: "skylift",    label: "Loods skylift",    kort: "Skylift",    base: 200, emoji: "🚁" },
+  { id: "terrorbite", label: "Loods terrorbite", kort: "Terrorbite", base: 0,   emoji: "✈️" },
+];
+const WEEKDAG = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+const nlNum = (n: number) => Number(n || 0).toLocaleString("nl-BE");
+const uurBE = (iso: string) => new Date(iso).toLocaleTimeString("nl-BE", { timeZone: "Europe/Brussels", hour: "2-digit", minute: "2-digit" });
+function loodsMessage(datum: string, missies: any[], base: number, open = true) {
+  const dag = WEEKDAG[new Date(`${datum}T12:00:00Z`).getUTCDay()];
+  const gedaan = (id: string) => missies.find((x) => x.type === id);
+  const klaar = LOODS_MISSIES.filter((m) => gedaan(m.id)).length;
+  const regels = LOODS_MISSIES.map((m, n) => {
+    const x = gedaan(m.id);
+    const status = x ? `✅ gedaan door ${x.discord_id ? `<@${x.discord_id}>` : `**${x.door || "?"}**`} · ${uurBE(x.at)}` : "❌ nog niet gedaan";
+    return `**${n + 1}. ${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ""}\n${status}`;
+  });
+  return {
+    content: "",
+    embeds: [{
+      title: `📦 Loods missies — ${dag} ${datum.slice(8, 10)}/${datum.slice(5, 7)}`,
+      description: `${regels.join("\n\n")}\n\n🧪 **Momenteel in loods: ${nlNum(base)} base**`,
+      color: !open ? 0x6b7280 : klaar === LOODS_MISSIES.length ? 0x22c55e : 0xf59e0b,
+      footer: { text: open ? `${klaar}/${LOODS_MISSIES.length} gedaan · elke missie 1× per dag · om 00u komt een nieuw bericht` : `Dag afgesloten · ${klaar}/${LOODS_MISSIES.length} gedaan` },
+    }],
+    components: open ? [{
+      type: 1, components: [
+        ...LOODS_MISSIES.map((m) => gedaan(m.id)
+          ? { type: 2, style: 3, custom_id: `loods:m:${m.id}:${datum}`, label: `${m.kort} gedaan`, emoji: { name: "✅" }, disabled: true }
+          : { type: 2, style: 1, custom_id: `loods:m:${m.id}:${datum}`, label: m.kort, emoji: { name: m.emoji } }),
+        { type: 2, style: 4, custom_id: `loods:reset:${datum}`, label: "Reset base", emoji: { name: "🗑️" } },
+      ],
+    }] : [],
+    allowed_mentions: { parse: [] },
+  };
+}
+
 // ---------- hulp ----------
 const hex =(s: string) => new Uint8Array((s.match(/.{1,2}/g) ?? []).map((b) => parseInt(b, 16)));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -212,6 +252,48 @@ Deno.serve(async (req) => {
   const dm = !i.guild_id;
 
   const discordId = i.member?.user?.id ?? i.user?.id;
+
+  // ---------- loods-missies (los van de site: iedereen die het kanaal ziet, ook zonder profiel) ----------
+  // custom_id: loods:m:<missie>:<datum> (knop) · loods:reset:<datum> (knop → venster) · loods:resetf:<datum> (venster met code)
+  if (kind === "loods") {
+    const [, sub, a, b] = String(i.data?.custom_id ?? "").split(":");
+    const datum = sub === "m" ? b : a;
+    const door = String(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || "?");
+    if (datum !== vandaag()) return ephemeral("Dit is het bericht van een vorige dag — gebruik het nieuwste bericht in het kanaal.");
+    const bijwerken = async () => {
+      const [{ data: missies }, { data: vr }] = await Promise.all([
+        sb.from("loods_missies").select("*").eq("datum", datum),
+        sb.from("loods_voorraad").select("base").eq("id", true).maybeSingle(),
+      ]);
+      return json({ type: 7, data: loodsMessage(datum, missies ?? [], vr?.base ?? 0, true) });
+    };
+    if (sub === "m") {
+      const { error } = await sb.rpc("fn_loods_missie", { p_datum: datum, p_type: a, p_discord_id: discordId, p_door: door });
+      if (error) {
+        const m = String(error.message ?? "");
+        if (/AL_GEDAAN/.test(m)) return ephemeral("Die missie is vandaag al gedaan.");
+        if (/ANDERE_DAG/.test(m)) return ephemeral("Dit is het bericht van een vorige dag — gebruik het nieuwste bericht in het kanaal.");
+        return ephemeral(`Er ging iets mis: ${m}`);
+      }
+      return bijwerken();
+    }
+    if (sub === "reset") {
+      return json({ type: 9, data: { custom_id: `loods:resetf:${datum}`, title: "Base coke resetten", components: [{
+        type: 1, components: [{ type: 4, custom_id: "code", label: "Code", style: 1, min_length: 1, max_length: 20, required: true, placeholder: "Vul de reset-code in" }],
+      }] } });
+    }
+    if (sub === "resetf") {
+      const code = String(i.data?.components?.[0]?.components?.[0]?.value ?? "").trim();
+      const juist = (Deno.env.get("LOODS_RESET_CODE") ?? "").trim();
+      if (!juist) return ephemeral("De reset-code is nog niet ingesteld (secret LOODS_RESET_CODE in Supabase).");
+      if (code !== juist) return ephemeral("❌ Verkeerde code — de base is niet gereset.");
+      const { error } = await sb.rpc("fn_loods_reset", { p_door: door });
+      if (error) return ephemeral(`Er ging iets mis: ${error.message}`);
+      return bijwerken();
+    }
+    return ephemeral("Onbekende actie.");
+  }
+
   const { data: user } = await sb.from("users").select("id,name,perm_boss,is_owner,rank").eq("discord_id", discordId).limit(1).maybeSingle();
   if (!user) return ephemeral("Je Discord is nog niet gekoppeld aan een profiel op de site. Vraag de Boss om je Discord-ID in te stellen (Boss menu → Ledenlijst).");
 
