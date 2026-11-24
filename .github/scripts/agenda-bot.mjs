@@ -541,19 +541,28 @@ async function kanaalOpNaam(envNaam, re) {
 }
 const ledenKanaal = () => kanaalOpNaam('DISCORD_LEDENLIJST_CHANNEL_ID', /leden-?lijst/i);
 
-function ledenTekst(users, emo) {
+// tot = { user_id: 'YYYY-MM-DD' } voor wie vandaag afwezig is
+// stand: 'alles' = onder elke naam aanwezig/afwezig · 'afwezig' = enkel bij wie afwezig is · 'kaal' = zonder (als het te lang wordt)
+function ledenTekst(users, emo, tot = {}, stand = 'alles') {
   // alfabetisch binnen elke rang; geen lege regels tussen de blokken (zoals de lijst van Stijn)
   const leden = users.filter(u => String(u.name || '').trim().toLowerCase() !== 'gangpot')
     .map(u => ({ ...u, naam: naamNet(u.name) }))
     .sort((a, b) => a.naam.localeCompare(b.naam, 'nl'));
   const rangVan = u => RANK_MIGRATE[u.rank] || u.rank;
+  const regel = u => {
+    if (stand === 'kaal') return `- ${u.naam}`;
+    const t = tot[u.id];
+    if (t) return `${u.naam}\n-# 🔴 afwezig tot ${t.slice(8, 10)}/${t.slice(5, 7)}`;
+    return stand === 'alles' ? `${u.naam}\n-# 🟢 aanwezig` : u.naam;
+  };
   const blokken = RANGEN.map(([id, es, nl]) => {
-    const namen = leden.filter(u => rangVan(u) === id).map(u => `- ${u.naam}`);
+    const namen = leden.filter(u => rangVan(u) === id).map(regel);
     return [`## ${emo[id] ? emo[id] + ' ' : ''}\\|\\| ${es} - ${nl}`, ...namen].join('\n');
   });
   const zonder = leden.filter(u => !RANGEN.some(([id]) => id === rangVan(u)));
-  if (zonder.length) blokken.push(['## Nog geen rang', ...zonder.map(u => `- ${u.naam}`)].join('\n'));
-  return `${blokken.join('\n')}\n\n-# Leden totaal: ${leden.length}/${MAX_LEDEN} · wordt automatisch bijgewerkt vanuit de website`;
+  if (zonder.length) blokken.push(['## Nog geen rang', ...zonder.map(regel)].join('\n'));
+  const nAfw = leden.filter(u => tot[u.id]).length;
+  return `${blokken.join('\n')}\n\n-# Leden totaal: ${leden.length}/${MAX_LEDEN}${nAfw ? ` · ${nAfw} afwezig` : ''} · wordt automatisch bijgewerkt vanuit de website`;
 }
 
 async function ledenlijst() {
@@ -566,13 +575,19 @@ async function ledenlijst() {
 async function ledenlijstBijwerken() {
   const kanaal = await ledenKanaal();
   if (!kanaal) { console.log('Geen leden-lijst-kanaal gevonden — overgeslagen.'); return; }
-  const [users, emo, ik, berichten] = await Promise.all([
-    sb('users?select=name,rank,sort_order&order=sort_order.asc'),
+  const [users, emo, ik, berichten, absences] = await Promise.all([
+    sb('users?select=id,name,rank,sort_order&order=sort_order.asc'),
     rangEmojis(),
     discord('/users/@me'),
-    discord(`/channels/${kanaal}/messages?limit=50`)
+    discord(`/channels/${kanaal}/messages?limit=50`),
+    sb('absences?select=user_id,van,tot,status&status=neq.afgekeurd').catch(() => [])
   ]);
-  const content = ledenTekst(users, emo);
+  // wie is vandaag afwezig, en tot wanneer (bij aansluitende meldingen: de laatste einddatum)
+  const vandaag = dkey(new Date()), tot = {};
+  for (const a of absences) if (a.van <= vandaag && a.tot >= vandaag && (!tot[a.user_id] || a.tot > tot[a.user_id])) tot[a.user_id] = a.tot;
+  let content = ledenTekst(users, emo, tot, 'alles');
+  if (content.length > 2000) content = ledenTekst(users, emo, tot, 'afwezig');
+  if (content.length > 2000) content = ledenTekst(users, emo, tot, 'kaal');
   if (content.length > 2000) { console.log(`Leden-lijst te lang (${content.length} tekens) — overgeslagen.`); return; }
   const msg = { content, allowed_mentions: { parse: [] } };
   const mijn = berichten.find(m => m.author && m.author.id === ik.id);
