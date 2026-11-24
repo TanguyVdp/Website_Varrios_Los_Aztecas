@@ -713,8 +713,14 @@ async function afwKanaal(absences, discordVan) {
 async function afwRollen(absences, users) {
   const { guildId } = await server();
   const rollen = await discord(`/guilds/${guildId}/roles`);
-  let afw = rollen.find(r => r.name.trim().toLowerCase() === 'afwezig');
-  const aanw = rollen.find(r => r.name.trim().toLowerCase() === 'aanwezig');
+  // op ID (DISCORD_AFWEZIG_ROLE_ID / DISCORD_AANWEZIG_ROLE_ID in de workflow), anders op naam
+  const rol = (env, naam) => {
+    const id = String(process.env[env] || '').trim();
+    return (id && rollen.find(r => r.id === id)) || rollen.find(r => r.name.trim().toLowerCase().includes(naam));
+  };
+  let afw = rol('DISCORD_AFWEZIG_ROLE_ID', 'afwezig');
+  const aanw = rol('DISCORD_AANWEZIG_ROLE_ID', 'aanwezig');
+  if (process.env.DISCORD_AANWEZIG_ROLE_ID && !aanw) console.log('Rol "Aanwezig" met dat ID niet gevonden op de server.');
   if (!afw) {
     afw = await discord(`/guilds/${guildId}/roles`, 'POST', { name: 'Afwezig', color: 0x95a5a6, mentionable: false, hoist: false });
     console.log('Rol "Afwezig" aangemaakt.');
