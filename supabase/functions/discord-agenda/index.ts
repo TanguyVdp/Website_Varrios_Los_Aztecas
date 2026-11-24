@@ -165,6 +165,9 @@ function parseDag(txt: string): string | null {
   }
   return k(y);
 }
+// Lead-rangen (lead: true in App.RANKS) — enkel zij keuren afwezigheden goed/af in Discord (+ de eigenaar)
+const LEAD: Record<string, string> = { oprichter: "Oprichter", kolonel: "Kolonel", generaal: "Generaal" };
+const LEAD_MIGRATE: Record<string, string> = { boss: "oprichter", underboss: "kolonel" };   // oude rang-ids (App.RANK_MIGRATE)
 const AFW_FOUT: Record<string, string> = {
   EINDE_VOOR_START: "De einddatum ligt vóór de begindatum.",
   DATUM_VERLEDEN: "Die periode is al voorbij.",
@@ -209,7 +212,7 @@ Deno.serve(async (req) => {
   const dm = !i.guild_id;
 
   const discordId = i.member?.user?.id ?? i.user?.id;
-  const { data: user } = await sb.from("users").select("id,name,perm_boss,is_owner").eq("discord_id", discordId).limit(1).maybeSingle();
+  const { data: user } = await sb.from("users").select("id,name,perm_boss,is_owner,rank").eq("discord_id", discordId).limit(1).maybeSingle();
   if (!user) return ephemeral("Je Discord is nog niet gekoppeld aan een profiel op de site. Vraag de Boss om je Discord-ID in te stellen (Boss menu → Ledenlijst).");
 
   // ---------- afwezigheid melden (#afwezigheid) ----------
@@ -263,12 +266,24 @@ Deno.serve(async (req) => {
         (van <= nu ? "Je krijgt binnen een paar minuten de rol **Afwezig**." : `Vanaf ${datumBE(van)} krijg je automatisch de rol **Afwezig**.`) +
         " Na de einddatum verdwijnt die vanzelf." } });
     }
-    // 4. Boss keurt goed / af
+    // 4. Lead keurt goed / af: eerst een venster om eventueel iets bij te schrijven
+    const lead = LEAD[LEAD_MIGRATE[user.rank] || user.rank];
     if (sub === "ok" || sub === "nee") {
-      if (!user.perm_boss && !user.is_owner) return ephemeral("Enkel wie het Boss menu heeft, kan een afwezigheid goed- of afkeuren.");
-      const status = sub === "ok" ? "goedgekeurd" : "afgekeurd";
+      if (!lead && !user.is_owner) return ephemeral("Enkel **Lead** (Oprichter, Kolonel, Generaal) kan een afwezigheid goed- of afkeuren.");
+      const goed = sub === "ok";
+      return json({ type: 9, data: { custom_id: `afw:${sub}f:${arg}`, title: goed ? "Afwezigheid goedkeuren" : "Afwezigheid afkeuren", components: [{
+        type: 1, components: [{ type: 4, custom_id: "reactie", label: "Iets bijschrijven? (mag leeg)", style: 2, required: false, max_length: 200,
+          placeholder: goed ? "bv. Veel succes met je examens!" : "bv. Die dag hebben we je echt nodig." }],
+      }] } });
+    }
+    // 5. venster ingevuld → status + reactie opslaan en het bericht zelf bijwerken
+    if (sub === "okf" || sub === "neef") {
+      if (!lead && !user.is_owner) return ephemeral("Enkel **Lead** (Oprichter, Kolonel, Generaal) kan een afwezigheid goed- of afkeuren.");
+      const status = sub === "okf" ? "goedgekeurd" : "afgekeurd";
+      const reactie = String(i.data?.components?.[0]?.components?.[0]?.value ?? "").trim().slice(0, 200);
+      const door = `${lead || "Eigenaar"} ${user.name}`;
       const { data: a, error } = await sb.from("absences")
-        .update({ status, beoordeeld_door: `Boss (${user.name})`, beoordeeld_at: new Date().toISOString() })
+        .update({ status, beoordeeld_door: door, beoordeeld_at: new Date().toISOString(), ...(reactie ? { reactie } : {}) })
         .eq("id", arg).select("*").maybeSingle();
       if (error || !a) return ephemeral("Deze afwezigheid bestaat niet meer.");
       const { data: wie } = await sb.from("users").select("discord_id").eq("id", a.user_id).maybeSingle();
