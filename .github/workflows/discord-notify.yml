@@ -46,11 +46,15 @@ jobs:
           DISCORD_AFWEZIG_CHANNEL_ID: '1572374556838985820'   # #afwezigheid: meld-knop, meldingen en rol Afwezig
           DISCORD_AANWEZIG_ROLE_ID: '1573020053991989390'     # rol Aanwezig: iedereen (met Discord gekoppeld) die vandaag niet afwezig is
           DISCORD_AFWEZIG_ROLE_ID: '1573020186783518820'      # rol Afwezig: wie vandaag afwezig is (melding niet afgekeurd)
-        run: node .github/scripts/agenda-bot.mjs
+        # eerst de nieuwste state ophalen (een run die in de wachtrij stond, heeft anders een oude sollicitaties.json)
+        run: |
+          git fetch -q origin main && git checkout origin/main -- .github/state/sollicitaties.json 2>/dev/null || true
+          node .github/scripts/agenda-bot.mjs
 
       - name: Bewaar meld-status
         run: |
           git add .github/state/discord-notified.json
+          git add .github/state/sollicitaties.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git config user.name "wietloods-bot"
             git config user.email "actions@github.com"

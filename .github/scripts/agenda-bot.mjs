@@ -780,6 +780,7 @@ async function afwRollen(absences, users) {
 // Elk tekstkanaal daarin dat < 48u oud is en nog geen vragenlijst heeft, krijgt de tekst uit .github/assets/sollicitatie.md
 // (met een tag van wie het ticket opende). Oudere tickets en tickets waar de vragen al (met de hand) in staan: niets.
 const SOLLI_FILE = '.github/assets/sollicitatie.md';
+const SOLLI_STATE = '.github/state/sollicitaties.json';
 const SOLLI_KLAAR = /wat is je leeftijd/i;   // staat dit al in het kanaal, dan zijn de vragen er al
 const kanaalTijd = id => Number((BigInt(id) >> 22n) + 1420070400000n);
 function stukken(tekst, max = 1900) {   // Discord: max 2000 tekens per bericht → op regels splitsen
@@ -801,7 +802,20 @@ async function sollicitaties() {
   const cat = vast || (channels.find(c => c.type === 4 && /sollicitatie\s*ticket/i.test(c.name)) || {}).id;
   if (!cat) { console.log('Sollicitaties: geen categorie "Sollicitatie ticket" gevonden — overgeslagen.'); return; }
   const nieuw = channels.filter(c => c.type === 0 && c.parent_id === cat && Date.now() - kanaalTijd(c.id) < 48 * HOUR);
+  // in welke tickets de vragen al staan, wordt bijgehouden in SOLLI_STATE (gecommit door de workflow): zo wordt er
+  // maar 1× gepost, ook als de bot de berichtgeschiedenis van het kanaal niet mag lezen (dan geeft Discord een lege lijst)
+  const { writeFile } = await import('node:fs/promises');
+  let gedaan = null;
+  try { gedaan = JSON.parse(await readFile(SOLLI_STATE, 'utf8')); } catch { /* eerste keer */ }
+  if (!gedaan) {   // eerste keer: alle bestaande tickets als gedaan markeren, niets posten
+    gedaan = Object.fromEntries(nieuw.map(c => [c.id, Date.now()]));
+    await writeFile(SOLLI_STATE, JSON.stringify(gedaan, null, 2) + '\n');
+    console.log(`Sollicitaties: bijhouden gestart (${nieuw.length} bestaande tickets overgeslagen).`);
+    return;
+  }
   if (!nieuw.length) return;
+  for (const id of Object.keys(gedaan)) if (Date.now() - gedaan[id] > 14 * 24 * HOUR) delete gedaan[id];
+  const bewaar = () => writeFile(SOLLI_STATE, JSON.stringify(gedaan, null, 2) + '\n');
   const ik = await discord('/users/@me');
   // {rol:Naam} in de tekst → echte rol-tag (bv. {rol:Ticket Support} → @Ticket Support)
   const rolIds = [];
@@ -821,11 +835,19 @@ async function sollicitaties() {
       if (e.status === 403) { console.log(`Sollicitaties: geen toegang tot #${ch.name} — geef de bot "Kanaal bekijken", "Berichten versturen" en "Berichtgeschiedenis lezen" in die tickets.`); continue; }
       throw e;
     }
-    if (berichten.some(m => (m.author && m.author.id === ik.id) || SOLLI_KLAAR.test(m.content || ''))) continue;
+    // dubbele vragenlijsten van de bot opruimen (de oudste blijft staan)
+    const van_mij = berichten.filter(m => m.author && m.author.id === ik.id);   // nieuwste eerst
+    for (const m of van_mij.slice(0, -stukken(tekst).length)) {
+      try { await discord(`/channels/${ch.id}/messages/${m.id}`, 'DELETE'); } catch (e) { if (e.status !== 404) console.log(`Sollicitaties: dubbel bericht verwijderen: ${e.message}`); }
+    }
+    if (gedaan[ch.id]) continue;
+    if (!berichten.length) console.log(`Sollicitaties: kan de berichten in #${ch.name} niet lezen — geef de bot "Berichtgeschiedenis lezen" (anders geen tag van de sollicitant).`);
+    if (van_mij.length || berichten.some(m => SOLLI_KLAAR.test(m.content || ''))) { gedaan[ch.id] = Date.now(); await bewaar(); continue; }
     // wie het ticket opende: de getagde persoon in het eerste bericht van Ticket Tool
     const eerste = berichten.filter(m => m.author && m.author.bot && m.mentions && m.mentions.length).pop();
     const wie = eerste ? eerste.mentions.find(u => !u.bot) : null;
     const delen = stukken(tekst);
+    gedaan[ch.id] = Date.now(); await bewaar();   // eerst bewaren: liever 1× te weinig dan elke run opnieuw
     for (let i = 0; i < delen.length; i++) {
       await discord(`/channels/${ch.id}/messages`, 'POST', {
         content: (i === 0 && wie ? `<@${wie.id}>\n` : '') + delen[i],
