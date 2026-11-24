@@ -194,7 +194,7 @@ function loodsMessage(datum: string, missies: any[], base: number, open = true) 
   const regels = LOODS_MISSIES.map((m, n) => {
     const x = gedaan(m.id);
     const status = x ? `✅ gedaan door ${x.discord_id ? `<@${x.discord_id}>` : `**${x.door || "?"}**`} · ${uurBE(x.at)}` : "❌ nog niet gedaan";
-    return `**${n + 1}. ${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ""}\n${status}`;
+    return `${["1️⃣", "2️⃣", "3️⃣"][n] || `${n + 1}.`} **${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ""}\n${status}`;
   });
   return {
     content: "",
@@ -209,6 +209,10 @@ function loodsMessage(datum: string, missies: any[], base: number, open = true) 
         ...LOODS_MISSIES.map((m) => gedaan(m.id)
           ? { type: 2, style: 3, custom_id: `loods:m:${m.id}:${datum}`, label: `${m.kort} gedaan`, emoji: { name: "✅" }, disabled: true }
           : { type: 2, style: 1, custom_id: `loods:m:${m.id}:${datum}`, label: m.kort, emoji: { name: m.emoji } }),
+      ],
+    }, {
+      type: 1, components: [
+        { type: 2, style: 2, custom_id: `loods:aanp:${datum}`, label: "Gedaan aanpassen", emoji: { name: "✏️" } },
         { type: 2, style: 4, custom_id: `loods:reset:${datum}`, label: "Reset base", emoji: { name: "🗑️" } },
       ],
     }] : [],
@@ -255,18 +259,61 @@ Deno.serve(async (req) => {
 
   // ---------- loods-missies (los van de site: iedereen die het kanaal ziet, ook zonder profiel) ----------
   // custom_id: loods:m:<missie>:<datum> (knop) · loods:reset:<datum> (knop → venster) · loods:resetf:<datum> (venster met code)
+  //            loods:aanp:<datum> (knop → venster) · loods:aanpf:<datum> (venster met code → keuzelijst) · loods:aanps:<datum> (keuzelijst)
   if (kind === "loods") {
     const [, sub, a, b] = String(i.data?.custom_id ?? "").split(":");
     const datum = sub === "m" ? b : a;
     const door = String(i.member?.nick || i.member?.user?.global_name || i.member?.user?.username || "?");
     if (datum !== vandaag()) return ephemeral("Dit is het bericht van een vorige dag — gebruik het nieuwste bericht in het kanaal.");
-    const bijwerken = async () => {
+    const laden = async () => {
       const [{ data: missies }, { data: vr }] = await Promise.all([
         sb.from("loods_missies").select("*").eq("datum", datum),
         sb.from("loods_voorraad").select("base").eq("id", true).maybeSingle(),
       ]);
-      return json({ type: 7, data: loodsMessage(datum, missies ?? [], vr?.base ?? 0, true) });
+      return loodsMessage(datum, missies ?? [], vr?.base ?? 0, true);
     };
+    const bijwerken = async () => json({ type: 7, data: await laden() });
+    const codeFout = () => {   // null = code juist
+      const code = String(i.data?.components?.[0]?.components?.[0]?.value ?? "").trim();
+      const juist = (Deno.env.get("LOODS_RESET_CODE") ?? "").trim();
+      if (!juist) return "De code is nog niet ingesteld (secret LOODS_RESET_CODE in Supabase).";
+      return code === juist ? null : "❌ Verkeerde code.";
+    };
+    const codeVenster = (id: string, titel: string) => json({ type: 9, data: { custom_id: id, title: titel, components: [{
+      type: 1, components: [{ type: 4, custom_id: "code", label: "Code", style: 1, min_length: 1, max_length: 20, required: true, placeholder: "Vul de code in" }],
+    }] } });
+    // keuzelijst (enkel zichtbaar voor wie de code invulde): aangevinkt = gedaan
+    const aanpasLijst = async (tekst: string) => {
+      const { data: missies } = await sb.from("loods_missies").select("type").eq("datum", datum);
+      const klaar = new Set((missies ?? []).map((x: any) => x.type));
+      return { flags: 64, content: tekst, components: [{ type: 1, components: [{
+        type: 3, custom_id: `loods:aanps:${datum}`, placeholder: "Welke missies zijn gedaan?", min_values: 0, max_values: LOODS_MISSIES.length,
+        options: LOODS_MISSIES.map((m) => ({ label: m.label, value: m.id, emoji: { name: m.emoji }, default: klaar.has(m.id),
+          description: m.base ? `+${nlNum(m.base)} base` : "geen base" })),
+      }] }] };
+    };
+    if (sub === "aanp") return codeVenster(`loods:aanpf:${datum}`, "Gedaan aanpassen");
+    if (sub === "aanpf") {
+      const fout = codeFout();
+      if (fout) return ephemeral(fout);
+      return json({ type: 4, data: await aanpasLijst("✏️ **Gedaan aanpassen** — vink aan wat vandaag gedaan is (afvinken haalt de base er weer af).") });
+    }
+    if (sub === "aanps") {
+      const gekozen = new Set<string>((i.data?.values ?? []) as string[]);
+      const { data: missies } = await sb.from("loods_missies").select("type").eq("datum", datum);
+      const klaar = new Set((missies ?? []).map((x: any) => x.type));
+      for (const m of LOODS_MISSIES) {
+        const aan = gekozen.has(m.id);
+        if (aan === klaar.has(m.id)) continue;
+        const { error } = await sb.rpc("fn_loods_zet", { p_datum: datum, p_type: m.id, p_aan: aan, p_discord_id: discordId, p_door: door });
+        if (error) return json({ type: 7, data: { content: `⚠️ Er ging iets mis: ${error.message}`, components: [] } });
+      }
+      // het bericht in het kanaal bijwerken
+      const { data: post } = await sb.from("loods_discord").select("channel_id,message_id").eq("datum", datum).maybeSingle();
+      if (post) await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, "PATCH", await laden());
+      const samen = LOODS_MISSIES.map((m) => `${gekozen.has(m.id) ? "✅" : "❌"} ${m.kort}`).join(" · ");
+      return json({ type: 7, data: await aanpasLijst(`✏️ **Opgeslagen:** ${samen}`) });
+    }
     if (sub === "m") {
       const { error } = await sb.rpc("fn_loods_missie", { p_datum: datum, p_type: a, p_discord_id: discordId, p_door: door });
       if (error) {
@@ -277,16 +324,10 @@ Deno.serve(async (req) => {
       }
       return bijwerken();
     }
-    if (sub === "reset") {
-      return json({ type: 9, data: { custom_id: `loods:resetf:${datum}`, title: "Base coke resetten", components: [{
-        type: 1, components: [{ type: 4, custom_id: "code", label: "Code", style: 1, min_length: 1, max_length: 20, required: true, placeholder: "Vul de reset-code in" }],
-      }] } });
-    }
+    if (sub === "reset") return codeVenster(`loods:resetf:${datum}`, "Base coke resetten");
     if (sub === "resetf") {
-      const code = String(i.data?.components?.[0]?.components?.[0]?.value ?? "").trim();
-      const juist = (Deno.env.get("LOODS_RESET_CODE") ?? "").trim();
-      if (!juist) return ephemeral("De reset-code is nog niet ingesteld (secret LOODS_RESET_CODE in Supabase).");
-      if (code !== juist) return ephemeral("❌ Verkeerde code — de base is niet gereset.");
+      const fout = codeFout();
+      if (fout) return ephemeral(`${fout} De base is niet gereset.`);
       const { error } = await sb.rpc("fn_loods_reset", { p_door: door });
       if (error) return ephemeral(`Er ging iets mis: ${error.message}`);
       return bijwerken();

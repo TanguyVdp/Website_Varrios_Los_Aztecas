@@ -878,7 +878,7 @@ function loodsMessage(datum, missies, base, open = true) {
   const regels = LOODS_MISSIES.map((m, n) => {
     const x = gedaan(m.id);
     const status = x ? `✅ gedaan door ${x.discord_id ? `<@${x.discord_id}>` : `**${x.door || '?'}**`} · ${uurBE(x.at)}` : '❌ nog niet gedaan';
-    return `**${n + 1}. ${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ''}\n${status}`;
+    return `${["1️⃣", "2️⃣", "3️⃣"][n] || `${n + 1}.`} **${m.emoji} ${m.label}**${m.base ? ` · +${nlNum(m.base)} base` : ''}\n${status}`;
   });
   return {
     content: '',
@@ -893,6 +893,10 @@ function loodsMessage(datum, missies, base, open = true) {
         ...LOODS_MISSIES.map(m => gedaan(m.id)
           ? { type: 2, style: 3, custom_id: `loods:m:${m.id}:${datum}`, label: `${m.kort} gedaan`, emoji: { name: '✅' }, disabled: true }
           : { type: 2, style: 1, custom_id: `loods:m:${m.id}:${datum}`, label: m.kort, emoji: { name: m.emoji } }),
+      ],
+    }, {
+      type: 1, components: [
+        { type: 2, style: 2, custom_id: `loods:aanp:${datum}`, label: 'Gedaan aanpassen', emoji: { name: '✏️' } },
         { type: 2, style: 4, custom_id: `loods:reset:${datum}`, label: 'Reset base', emoji: { name: '🗑️' } },
       ],
     }] : [],
