@@ -920,8 +920,31 @@ async function loodsMissies() {
     await sbUpdate('loods_discord', `datum=eq.${p.datum}`, { gesloten: true });
     console.log(`Loods-missies: ${p.datum} afgesloten`);
   }
+  // bericht van vandaag nakijken: klopt het niet meer (nieuwe versie van de knoppen/tekst), dan bijwerken
+  const huidig = posts.find(p => p.datum === vandaag);
+  if (huidig) {
+    const missies = await sb(`loods_missies?select=*&datum=eq.${vandaag}`);
+    const msg = loodsMessage(vandaag, missies, base, true);
+    const sig = m => JSON.stringify([
+      m.embeds && m.embeds[0] ? [m.embeds[0].description, m.embeds[0].footer && m.embeds[0].footer.text, m.embeds[0].color] : null,
+      (m.components || []).map(r => (r.components || []).map(c => `${c.custom_id}|${c.label}|${!!c.disabled}`)),
+    ]);
+    try {
+      const nu = await discord(`/channels/${huidig.channel_id}/messages/${huidig.message_id}`);
+      if (sig(nu) !== sig(msg)) {
+        await discord(`/channels/${huidig.channel_id}/messages/${huidig.message_id}`, 'PATCH', msg);
+        console.log(`Loods-missies: bericht van ${vandaag} bijgewerkt`);
+      }
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      // bericht weggehaald in Discord → opnieuw posten
+      const sent = await discord(`/channels/${kanaal}/messages`, 'POST', msg);
+      await sbUpdate('loods_discord', `datum=eq.${vandaag}`, { channel_id: kanaal, message_id: sent.id });
+      console.log(`Loods-missies: bericht van ${vandaag} was weg — opnieuw gepost`);
+    }
+  }
   // nieuw bericht voor vandaag
-  if (!posts.some(p => p.datum === vandaag)) {
+  if (!huidig) {
     const missies = await sb(`loods_missies?select=*&datum=eq.${vandaag}`);
     const sent = await discord(`/channels/${kanaal}/messages`, 'POST', loodsMessage(vandaag, missies, base, true));
     await sbInsert('loods_discord', { datum: vandaag, channel_id: kanaal, message_id: sent.id });
