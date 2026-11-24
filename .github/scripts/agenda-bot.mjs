@@ -601,10 +601,11 @@ async function ledenlijstBijwerken() {
 }
 
 // ---------- afwezigheid: #afwezigheid + rol "Afwezig" ----------
-// 1. Onderaan het kanaal staat altijd één bericht met de knop "Afwezigheid melden" (afw:open → Edge Function:
-//    reden kiezen → venster van/tot → fn_add_absence → melding in het kanaal).
+// 1. In het kanaal staat één bericht met de knop "Afwezigheid melden" (afw:open → Edge Function:
+//    reden kiezen → venster van/tot → fn_add_absence → melding in het kanaal). Wordt 1× gepost en blijft staan.
 // 2. Meldingen van de site (laatste 24u) worden ook in het kanaal gezet; status/gegevens gewijzigd → bericht bijgewerkt;
-//    melding verwijderd op de site → bericht weg. Bijgehouden in absence_discord (supabase/update-v2-discord-afwezig.sql).
+//    melding verwijderd op de site of afwezigheid voorbij (dag na de einddatum) → bericht weg.
+//    Bijgehouden in absence_discord (supabase/update-v2-discord-afwezig.sql).
 // 3. Rol "Afwezig" (wordt aangemaakt als hij nog niet bestaat): wie vandaag afwezig is (van ≤ vandaag ≤ tot, niet afgekeurd)
 //    krijgt hem, anders gaat hij eraf. Bestaat er een rol "Aanwezig", dan krijgt iedereen die NIET afwezig is die rol.
 //    Enkel voor profielen met een Discord-ID. De bot heeft "Rollen beheren" nodig en zijn eigen rol moet hoger staan.
@@ -691,8 +692,18 @@ async function afwKanaal(absences, discordVan) {
     const byId = new Map(posts.map(p => [p.absence_id, p]));
     const bestaat = new Set(absences.map(a => a.id));
     const since = Date.now() - 24 * HOUR;
+    const vandaag = dkey(new Date());
     for (const a of absences) {
       const msg = absenceMessage(a, discordVan.get(a.user_id)), sig = absenceSig(msg), post = byId.get(a.id);
+      // afwezigheid voorbij (de dag na de einddatum) → bericht weg uit het kanaal (op de site blijft ze staan)
+      if (a.tot < vandaag) {
+        if (!post) continue;
+        try { await discord(`/channels/${post.channel_id}/messages/${post.message_id}`, 'DELETE'); }
+        catch (e) { if (e.status !== 404) { console.log(`Afgelopen afwezigheid verwijderen: ${e.message}`); continue; } }
+        await sbDelete('absence_discord', `absence_id=eq.${a.id}`);
+        console.log(`Afwezigheid voorbij — bericht weg: ${a.user_name} (tot ${a.tot})`);
+        continue;
+      }
       if (!post) {
         if (new Date(a.created_at).getTime() < since) continue;   // enkel nieuwe meldingen (van de site)
         const sent = await discord(`/channels/${kanaal}/messages`, 'POST', msg);
@@ -714,15 +725,15 @@ async function afwKanaal(absences, discordVan) {
     }
   }
 
-  // het meld-bericht met de knop staat altijd onderaan: is er iets na gekomen, dan opnieuw posten
-  const [ik, berichten] = await Promise.all([discord('/users/@me'), discord(`/channels/${kanaal}/messages?limit=30`)]);
+  // het meld-bericht met de knop: 1× posten en laten staan (enkel opnieuw als het weg is; dubbele worden opgeruimd)
+  const [ik, berichten] = await Promise.all([discord('/users/@me'), discord(`/channels/${kanaal}/messages?limit=100`)]);
   const panels = berichten.filter(m => isPanel(m, ik.id));
-  if (panels.length === 1 && berichten[0].id === panels[0].id) return;
-  for (const p of panels) {
+  for (const p of panels.slice(1)) {   // nieuwste blijft staan
     try { await discord(`/channels/${kanaal}/messages/${p.id}`, 'DELETE'); } catch (e) { if (e.status !== 404) throw e; }
   }
+  if (panels.length) return;
   await discord(`/channels/${kanaal}/messages`, 'POST', afwPanel());
-  console.log('Afwezigheid: meld-knop (opnieuw) onderaan gezet.');
+  console.log('Afwezigheid: meld-knop geplaatst.');
 }
 
 async function afwRollen(absences, users) {
