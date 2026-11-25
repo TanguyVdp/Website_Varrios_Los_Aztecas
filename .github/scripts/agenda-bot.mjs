@@ -555,11 +555,13 @@ const server = () => serverInfo || (serverInfo = (async () => {
   const agenda = await discord(`/channels/${DISCORD_AGENDA_CHANNEL_ID}`);
   return { guildId: agenda.guild_id, channels: await discord(`/guilds/${agenda.guild_id}/channels`) };
 })());
+// kanaalnaam vergelijkbaar maken: sierletters (𝙇𝙚𝙙𝙚𝙣-𝙇𝙞𝙟𝙨𝙩, 𝐀𝐟𝐰𝐞𝐳𝐢𝐠, …) → gewone letters (NFKC)
+const kanaalNaam = n => String(n || '').normalize('NFKC');
 // kanaal-ID uit een secret, of anders het tekstkanaal waarvan de naam past bij re
 async function kanaalOpNaam(envNaam, re) {
   const vast = String(process.env[envNaam] || '').trim();
   if (vast) return vast;
-  const c = (await server()).channels.find(ch => ch.type === 0 && re.test(ch.name));
+  const c = (await server()).channels.find(ch => ch.type === 0 && re.test(kanaalNaam(ch.name)));
   return c ? c.id : null;
 }
 const ledenKanaal = () => kanaalOpNaam('DISCORD_LEDENLIJST_CHANNEL_ID', /leden-?lijst/i);
@@ -820,7 +822,7 @@ async function sollicitaties() {
   if (!tekst) return;
   const { channels } = await server();
   const vast = String(process.env.DISCORD_SOLLI_CATEGORY_ID || '').trim();
-  const cat = vast || (channels.find(c => c.type === 4 && /sollicitatie\s*ticket/i.test(c.name)) || {}).id;
+  const cat = vast || (channels.find(c => c.type === 4 && /sollicitatie\s*ticket/i.test(kanaalNaam(c.name))) || {}).id;
   if (!cat) { console.log('Sollicitaties: geen categorie "Sollicitatie ticket" gevonden — overgeslagen.'); return; }
   const nieuw = channels.filter(c => c.type === 0 && c.parent_id === cat && Date.now() - kanaalTijd(c.id) < 48 * HOUR);
   // in welke tickets de vragen al staan, wordt bijgehouden in SOLLI_STATE (gecommit door de workflow): zo wordt er
