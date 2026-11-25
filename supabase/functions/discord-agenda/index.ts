@@ -93,6 +93,26 @@ function buildMessage(ev: any, rsvps: any[], members: any[], closed = false) {
   };
 }
 
+// wie die dag afwezig gemeld is (niet afgekeurd) en zelf nog niets antwoordde → automatisch "afwezig" (niet opgeslagen;
+// een eigen antwoord gaat altijd voor). Kopie van metAfwezig() in agenda-bot.mjs (= App.agendaRsvps op de site) — hou ze gelijk.
+// deno-lint-ignore no-explicit-any
+function metAfwezig(events: any[], rsvps: any[], members: any[], absences: any[]) {
+  // deno-lint-ignore no-explicit-any
+  const extra: any[] = [];
+  for (const ev of events) {
+    const answered = new Set(rsvps.filter((r) => r.event_id === ev.id).map((r) => r.user_id));
+    for (const u of members) {
+      if (answered.has(u.id)) continue;
+      const a = absences.find((x) => x.user_id === u.id && x.status !== "afgekeurd" && x.van <= ev.datum && x.tot >= ev.datum);
+      if (!a) continue;
+      const r = AFW_REDENEN[a.reden] || AFW_REDENEN.andere;
+      const reden = a.reden === "andere" ? (a.toelichting || "Andere") : r.label + (a.toelichting ? ` — ${a.toelichting}` : "");
+      extra.push({ event_id: ev.id, user_id: u.id, user_name: u.name, status: "afwezig", reden: `${reden} · afwezigheid gemeld`, auto: true });
+    }
+  }
+  return [...rsvps, ...extra];
+}
+
 // redenen bij "afwezig" — zelfde lijst als App.AGENDA.AFWEZIG in assets/js/config.js (labels moeten gelijk zijn)
 const REDENEN = [
   { id: "werk", label: "Werk", emoji: "💼" },
@@ -229,13 +249,16 @@ const discord = (path: string, method: string, body: unknown) => fetch(`${API}${
 }).catch(() => null);
 
 async function loadForEvent(eventId: string) {
-  const [{ data: ev }, { data: rsvps }, { data: members }] = await Promise.all([
+  const [{ data: ev }, { data: rsvps }, { data: users }, { data: absences }] = await Promise.all([
     sb.from("events").select("*").eq("id", eventId).maybeSingle(),
     sb.from("event_rsvps").select("*").eq("event_id", eventId),
     // alle profielen (behalve gangpot), ook wie nog nooit ingelogd heeft — zelfde lijst als in agenda-bot.mjs
     sb.from("users").select("id,name,sort_order").order("sort_order"),
+    sb.from("absences").select("user_id,van,tot,reden,toelichting,status").neq("status", "afgekeurd"),
   ]);
-  return { ev, rsvps: rsvps ?? [], members: (members ?? []).filter((u) => u.name.trim().toLowerCase() !== "gangpot") };
+  const members = (users ?? []).filter((u) => u.name.trim().toLowerCase() !== "gangpot");
+  // + automatisch afwezig voor wie die dag afwezigheid meldde en nog niet antwoordde
+  return { ev, rsvps: ev ? metAfwezig([ev], rsvps ?? [], members, absences ?? []) : (rsvps ?? []), members };
 }
 
 Deno.serve(async (req) => {

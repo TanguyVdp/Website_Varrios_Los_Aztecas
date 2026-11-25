@@ -11,6 +11,23 @@
   const leden = state => state.users.filter(u => !App.L.isGangpot(u)).sort((a, b) => a.sort_order - b.sort_order);
   const absentOn = (state, k) => (state.absences || []).filter(a => a.status !== 'afgekeurd' && a.van <= k && a.tot >= k);
 
+  // antwoorden van een activiteit + wie die dag afwezig gemeld is (niet afgekeurd) en zelf nog niets antwoordde
+  // → automatisch "afwezig" (auto: true, niet opgeslagen). Een eigen antwoord gaat altijd voor.
+  // Zelfde regel als metAfwezig() in agenda-bot.mjs en de Edge Function — hou ze gelijk.
+  App.agendaRsvps = (state, e) => {
+    const rs = (state.rsvps || []).filter(x => x.event_id === e.id);
+    const answered = new Set(rs.map(x => x.user_id));
+    const weg = absentOn(state, e.datum);
+    const auto = leden(state).filter(u => !answered.has(u.id)).map(u => {
+      const a = weg.find(x => x.user_id === u.id);
+      if (!a) return null;
+      const r = App.ABSENCE.REASONS.find(x => x.id === a.reden) || App.ABSENCE.REASONS[App.ABSENCE.REASONS.length - 1];
+      const reden = a.reden === 'andere' ? (a.toelichting || 'Andere') : r.label + (a.toelichting ? ` — ${a.toelichting}` : '');
+      return { event_id: e.id, user_id: u.id, user_name: u.name, status: 'afwezig', reden: `${reden} · afwezigheid gemeld`, auto: true };
+    }).filter(Boolean);
+    return [...rs, ...auto];
+  };
+
   function relDay(k) {
     const diff = U.daysBetween(U.dkey(new Date()), k);
     return { diff, label: diff === 0 ? 'vandaag' : diff === 1 ? 'morgen' : diff < 0 ? 'voorbij' : `over ${diff} dagen` };
@@ -18,12 +35,12 @@
 
   // samenvatting van de aanmeldingen + jouw antwoord
   function rsvpLine(e, { state, me }) {
-    const rs = (state.rsvps || []).filter(x => x.event_id === e.id);
+    const rs = App.agendaRsvps(state, e);
     const mine = me && rs.find(x => x.user_id === me.id);
     const past = relDay(e.datum).diff < 0;
     const counts = RS.map(s => { const n = rs.filter(x => x.status === s.id).length; return s.old && !n ? '' : `<span class="rs-count" style="--accent:var(--${s.tone})" title="${s.label}">${I(s.icon, 11)}${n}</span>`; }).join('');
     const you = !me ? '' : mine
-      ? `<span class="rpill" style="--accent:var(--${rsvpOf(mine.status).tone})">Jij: ${rsvpOf(mine.status).label.toLowerCase()}</span>`
+      ? `<span class="rpill" style="--accent:var(--${rsvpOf(mine.status).tone})" ${mine.auto ? 'title="Automatisch: je hebt die dag afwezigheid gemeld"' : ''}>Jij: ${rsvpOf(mine.status).label.toLowerCase()}${mine.auto ? ' (gemeld)' : ''}</span>`
       : past ? '' : `<span class="rpill hot" style="--accent:var(--warn)">${I('alert', 11)}Nog niet geantwoord</span>`;
     return `<div class="rs-line">${counts}${you}</div>`;
   }
@@ -70,8 +87,8 @@
     const { state, me } = ctx;
     const t = typeOf(e.type), d = U.parseDay(e.datum), r = relDay(e.datum);
     const weg = absentOn(state, e.datum);
-    const rs = (state.rsvps || []).filter(x => x.event_id === e.id);
-    const mine = me && rs.find(x => x.user_id === me.id);
+    const rs = App.agendaRsvps(state, e);
+    const mine = me && rs.find(x => x.user_id === me.id && !x.auto);   // enkel een echt (zelf gekozen) antwoord
     const mijnAfw = me && weg.find(a => a.user_id === me.id);
     const sel = { status: mine ? mine.status : (mijnAfw ? 'afwezig' : null), ...parseReden(mine && mine.status === 'afwezig' ? mine.reden : null, mijnAfw) };
     const geantwoord = new Set(rs.map(x => x.user_id));
@@ -102,7 +119,7 @@
           <div class="reason-grid">${AFW.map(r => `<button type="button" class="reason ${sel.reden === r.id ? 'on' : ''}" data-rr="${r.id}" style="--accent:var(--${r.tone})">${I(r.icon, 15)}<span>${r.label}</span></button>`).join('')}</div>
           <input class="input" id="rs-reden" maxlength="110" placeholder="${sel.reden === 'andere' ? 'Typ je reden' : 'Toelichting (optioneel)'}" value="${U.esc(sel.extra || '')}">
         </div>
-        ${mijnAfw && !mine ? `<p class="muted small">${I('userx', 12)} Je staat die dag als afwezig gemeld.</p>` : ''}
+        ${mijnAfw && !mine ? `<p class="muted small">${I('userx', 12)} Je staat automatisch op afwezig omdat je die dag afwezigheid gemeld hebt. Kan je toch? Kies Aanwezig en sla op.</p>` : ''}
         <div class="err" id="rs-err"></div>
         <button class="btn cyan block" type="submit" id="rs-save" ${sel.status ? '' : 'disabled'}>${mine ? 'Antwoord wijzigen' : 'Antwoord opslaan'}</button>
       </form>` : ''}

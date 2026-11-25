@@ -134,6 +134,24 @@ function buildMessage(ev, rsvps, members, closed = false) {
   };
 }
 
+// wie die dag afwezig gemeld is (niet afgekeurd) en zelf nog niets antwoordde → automatisch "afwezig" (niet opgeslagen;
+// een eigen antwoord gaat altijd voor). Kopie in de Edge Function, zelfde regel als App.agendaRsvps op de site — hou ze gelijk.
+function metAfwezig(events, rsvps, members, absences) {
+  const extra = [];
+  for (const ev of events) {
+    const answered = new Set(rsvps.filter(r => r.event_id === ev.id).map(r => r.user_id));
+    for (const u of members) {
+      if (answered.has(u.id)) continue;
+      const a = absences.find(x => x.user_id === u.id && x.status !== 'afgekeurd' && x.van <= ev.datum && x.tot >= ev.datum);
+      if (!a) continue;
+      const r = AFW_REDENEN[a.reden] || AFW_REDENEN.andere;
+      const reden = a.reden === 'andere' ? (a.toelichting || 'Andere') : r.label + (a.toelichting ? ` — ${a.toelichting}` : '');
+      extra.push({ event_id: ev.id, user_id: u.id, user_name: u.name, status: 'afwezig', reden: `${reden} · afwezigheid gemeld`, auto: true });
+    }
+  }
+  return [...rsvps, ...extra];
+}
+
 // wat er in een agenda-bericht kan wijzigen (antwoorden + "geplaatst door") — anders → bericht bijwerken
 const msgSig = msg => JSON.stringify([msg.embeds[0].fields, msg.embeds[0].footer]);
 
@@ -240,15 +258,17 @@ async function cleanPings(rsvps, now) {
 async function main() {
   const now = new Date();
   const yesterday = dkey(new Date(now.getTime() - 24 * HOUR));
-  const [events, rsvps, users, absences, posts] = await Promise.all([
+  const [events, antwoorden, users, absences, posts] = await Promise.all([
     sb(`events?select=*&datum=gte.${yesterday}&order=datum.asc`),
     sb('event_rsvps?select=*'),
     // alle profielen (behalve gangpot), ook wie nog nooit ingelogd heeft — zelfde lijst als in de Edge Function
     sb('users?select=id,name,discord_id,sort_order&order=sort_order.asc'),
-    sb('absences?select=user_id,van,tot&status=neq.afgekeurd'),
+    sb('absences?select=user_id,van,tot,reden,toelichting,status&status=neq.afgekeurd'),
     sb('agenda_discord?select=*')
   ]);
   const members = users.filter(u => u.name.trim().toLowerCase() !== 'gangpot');
+  // + automatisch afwezig voor wie die dag afwezigheid meldde en nog niet antwoordde (telt ook als "geantwoord" voor de tags)
+  const rsvps = metAfwezig(events, antwoorden, members, absences);
   const canRemind = await remindersReady();
   const byEvent = new Map(posts.map(p => [p.event_id, p]));
   const eventIds = new Set(events.map(e => e.id));

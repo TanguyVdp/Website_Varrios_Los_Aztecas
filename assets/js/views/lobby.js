@@ -104,7 +104,7 @@
         <div><span class="lh-stat-label">Volgende activiteit</span><span class="ag-sum-title dim">Niets gepland</span><span class="lh-stat-sub">bekijk de agenda</span></div>
       </a>`;
     const t = App.AGENDA.TYPES.find(x => x.id === e.type) || App.AGENDA.TYPES[App.AGENDA.TYPES.length - 1];
-    const mine = me && (state.rsvps || []).find(r => r.event_id === e.id && r.user_id === me.id);
+    const mine = me && App.agendaRsvps(state, e).find(r => r.user_id === me.id);   // ook automatisch afwezig (afwezigheid gemeld)
     const rs = mine && App.AGENDA.RSVP.find(x => x.id === mine.status);
     const dag = e.datum === today ? 'Vandaag' : e.datum === U.dkey(U.addDays(new Date(), 1)) ? 'Morgen' : U.dayLabel(e.datum);
     return `
@@ -114,7 +114,7 @@
           <span class="lh-stat-label">Volgende activiteit</span>
           <span class="ag-sum-title">${U.esc(e.titel)}</span>
           <span class="lh-stat-sub">${dag}${e.tijd ? ` · ${e.tijd}` : ''}${e.plaats ? ` · ${U.esc(e.plaats)}` : ''}</span>
-          ${rs ? `<span class="ag-sum-rs" style="--accent:var(--${rs.tone})">${I(rs.icon, 11)} Jij: ${rs.label.toLowerCase()}</span>`
+          ${rs ? `<span class="ag-sum-rs" style="--accent:var(--${rs.tone})">${I(rs.icon, 11)} Jij: ${rs.label.toLowerCase()}${mine.auto ? ' (gemeld)' : ''}</span>`
                : `<span class="ag-sum-rs open" style="--accent:var(--warn)">${I('alert', 11)} Nog niet gereageerd</span>`}
         </div>
       </a>`;
