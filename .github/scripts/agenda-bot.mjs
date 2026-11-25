@@ -865,7 +865,7 @@ async function sollicitaties() {
 // Vereist supabase/update-v2-discord-loods.sql. loodsMessage() staat ook in de Edge Function — hou ze gelijk.
 const LOODS_MISSIES = [
   { id: 'handelaar',  label: 'Loods handelaar',  kort: 'Handelaar',  base: 600, emoji: '🤝' },
-  { id: 'skylift',    label: 'Loods skylift',    kort: 'Skylift',    base: 200, emoji: '🚁' },
+  { id: 'skylift',    label: 'Loods skylift',    kort: 'Skylift',    base: 400, emoji: '🚁' },
   { id: 'terrorbite', label: 'Loods terrorbite', kort: 'Terrorbite', base: 0,   emoji: '✈️' },
 ];
 const WEEKDAG = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];

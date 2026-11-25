@@ -11,7 +11,7 @@ returns integer language plpgsql security definer set search_path = public as $$
 declare v_bij integer; v_oud integer; v_base integer;
 begin
   if p_datum <> (now() at time zone 'Europe/Brussels')::date then raise exception 'ANDERE_DAG'; end if;
-  v_bij := case p_type when 'handelaar' then 600 when 'skylift' then 200 when 'terrorbite' then 0 end;
+  v_bij := case p_type when 'handelaar' then 600 when 'skylift' then 400 when 'terrorbite' then 0 end;
   if v_bij is null then raise exception 'ONBEKENDE_MISSIE'; end if;
   if p_aan then
     insert into loods_missies (datum, type, discord_id, door, base_erbij)
