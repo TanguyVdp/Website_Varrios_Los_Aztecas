@@ -883,7 +883,7 @@ async function sollicitaties() {
 
 // ---------- loods-missies (los van de site) ----------
 // Elke dag (Belgische tijd, kort na 00u) een nieuw bericht in DISCORD_LOODS_CHANNEL_ID met de 3 missies + de base in de loods.
-// Het bericht van de vorige dag blijft staan, zonder knoppen. Knoppen → Edge Function (fn_loods_missie / fn_loods_reset).
+// Het bericht van de vorige dag wordt verwijderd (sinds 26/11/2026; de base blijft gewoon bewaard). Knoppen → Edge Function (fn_loods_missie / fn_loods_reset).
 // Vereist supabase/update-v2-discord-loods.sql. loodsMessage() staat ook in de Edge Function — hou ze gelijk.
 const LOODS_MISSIES = [
   { id: 'handelaar',  label: 'Loods handelaar',  kort: 'Handelaar',  base: 600, emoji: '🤝' },
@@ -934,13 +934,12 @@ async function loodsMissies() {
   const vandaag = dkey(new Date());   // TZ = Europe/Brussels (workflow)
   const voorraad = await sb('loods_voorraad?select=base&id=eq.true');
   const base = voorraad && voorraad[0] ? voorraad[0].base : 0;
-  // vorige dagen afsluiten: knoppen weg, grijs
-  for (const p of posts.filter(p => p.datum < vandaag && !p.gesloten)) {
-    const missies = await sb(`loods_missies?select=*&datum=eq.${p.datum}`);
-    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'PATCH', loodsMessage(p.datum, missies, base, false)); }
+  // vorige dagen: bericht uit het kanaal halen (ook de oude, al grijs gemaakte) en de rij opruimen
+  for (const p of posts.filter(p => p.datum < vandaag)) {
+    try { await discord(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE'); }
     catch (e) { if (e.status !== 404) throw e; }
-    await sbUpdate('loods_discord', `datum=eq.${p.datum}`, { gesloten: true });
-    console.log(`Loods-missies: ${p.datum} afgesloten`);
+    await sbDelete('loods_discord', `datum=eq.${p.datum}`);
+    console.log(`Loods-missies: bericht van ${p.datum} verwijderd`);
   }
   // bericht van vandaag nakijken: klopt het niet meer (nieuwe versie van de knoppen/tekst), dan bijwerken
   const huidig = posts.find(p => p.datum === vandaag);
