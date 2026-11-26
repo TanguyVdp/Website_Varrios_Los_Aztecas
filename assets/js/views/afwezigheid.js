@@ -114,9 +114,17 @@
     const today = U.dkey(new Date());
     const f = { van: null, tot: null, reden: null };
     const reasons = A.REASONS.map(r => `<button type="button" class="reason" data-reden="${r.id}" style="--accent:var(--${r.tone})">${I(r.icon, 16)}<span>${r.label}</span></button>`).join('');
+    // Boss: ook voor iemand anders melden (de database laat dat toe met het Boss-recht)
+    const boss = App.can('boss');
+    const ledenLijst = members(ctx.state);
+    const wieKeuze = boss ? `
+        <label class="field"><span>Voor wie?</span>
+          <select class="input" id="af-wie">${ledenLijst.map(u => `<option value="${u.id}" ${u.id === ctx.me.id ? 'selected' : ''}>${U.esc(u.name)}${u.id === ctx.me.id ? ' (ikzelf)' : ''}</option>`).join('')}</select>
+        </label>` : '';
     C.modal.open(`
-      <div class="af-head"><span class="af-ic">${I('calendar', 18)}</span><div><h3>Afwezigheid melden</h3><p class="muted small">Laat de familia weten wanneer je er niet bent.</p></div></div>
+      <div class="af-head"><span class="af-ic">${I('calendar', 18)}</span><div><h3>Afwezigheid melden</h3><p class="muted small">${boss ? 'Voor jezelf, of als Boss voor een ander lid.' : 'Laat de familia weten wanneer je er niet bent.'}</p></div></div>
       <form class="stack" id="af-form" autocomplete="off">
+        ${wieKeuze}
         <div class="field">
           <span>Periode</span>
           <button type="button" class="date-trigger" id="af-trigger" aria-expanded="true">
@@ -182,9 +190,11 @@
         err.textContent = '';
         C.busy($('#af-submit'), async () => {
           try {
-            await App.store.addAfwezigheid(ctx.me.id, { van: f.van, tot: f.tot || f.van, reden: f.reden, toelichting: $('#af-note').value });
+            const wie = ($('#af-wie') && $('#af-wie').value) || ctx.me.id;
+            await App.store.addAfwezigheid(wie, { van: f.van, tot: f.tot || f.van, reden: f.reden, toelichting: $('#af-note').value });
             C.modal.close();
-            C.toast('Afwezigheid aangevraagd — de Boss keurt ze goed');
+            const lid = ctx.state.users.find(u => u.id === wie);
+            C.toast(wie === ctx.me.id ? 'Afwezigheid aangevraagd — de Boss keurt ze goed' : `Afwezigheid voor ${lid ? lid.name : 'dat lid'} opgeslagen`);
           } catch (ex) { err.textContent = U.friendlyError(ex); }
         });
       });

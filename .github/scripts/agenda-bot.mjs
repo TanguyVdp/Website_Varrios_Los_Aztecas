@@ -627,7 +627,8 @@ async function ledenlijstBijwerken() {
 
 // ---------- afwezigheid: #afwezigheid + rol "Afwezig" ----------
 // 1. In het kanaal staat één bericht met de knop "Afwezigheid melden" (afw:open → Edge Function:
-//    reden kiezen → venster van/tot → fn_add_absence → melding in het kanaal). Wordt 1× gepost en blijft staan.
+//    reden kiezen → venster van/tot → fn_add_absence → melding in het kanaal). Staat altijd onderaan (anders opnieuw gepost).
+//    De meldingen erboven: langst weg bovenaan, eerst terug onderaan (afwVolgorde).
 // 2. Meldingen van de site (laatste 24u) worden ook in het kanaal gezet; status/gegevens gewijzigd → bericht bijgewerkt;
 //    melding verwijderd op de site of afwezigheid voorbij (dag na de einddatum) → bericht weg.
 //    Bijgehouden in absence_discord (supabase/update-v2-discord-afwezig.sql).
@@ -748,17 +749,42 @@ async function afwKanaal(absences, discordVan) {
       await sbDelete('absence_discord', `absence_id=eq.${p.absence_id}`);
       console.log(`Afwezigheid verwijderd op de site — bericht weg: ${p.absence_id}`);
     }
+    await afwVolgorde(absences, discordVan, kanaal);
   }
 
-  // het meld-bericht met de knop: 1× posten en laten staan (enkel opnieuw als het weg is; dubbele worden opgeruimd)
+  // het meld-bericht met de knop staat altijd ONDERAAN: is er iets na gekomen (melding, bericht van een lid), dan opnieuw posten
   const [ik, berichten] = await Promise.all([discord('/users/@me'), discord(`/channels/${kanaal}/messages?limit=100`)]);
-  const panels = berichten.filter(m => isPanel(m, ik.id));
-  for (const p of panels.slice(1)) {   // nieuwste blijft staan
+  const panels = berichten.filter(m => isPanel(m, ik.id));   // nieuwste eerst
+  const onderaan = berichten.length && isPanel(berichten[0], ik.id);
+  for (const p of onderaan ? panels.slice(1) : panels) {
     try { await discord(`/channels/${kanaal}/messages/${p.id}`, 'DELETE'); } catch (e) { if (e.status !== 404) throw e; }
   }
-  if (panels.length) return;
+  if (onderaan) return;
   await discord(`/channels/${kanaal}/messages`, 'POST', afwPanel());
-  console.log('Afwezigheid: meld-knop geplaatst.');
+  console.log('Afwezigheid: meld-knop (opnieuw) onderaan geplaatst.');
+}
+
+// Volgorde van de meldingen in #afwezigheid: wie het LANGST weg is (latere einddatum) bovenaan, wie het eerst terug is
+// onderaan (net boven de meld-knop). Discord toont in volgorde van posten, dus wat verkeerd staat wordt opnieuw gepost
+// (nieuw bericht, oud weg) — zelfde aanpak als reorder() bij de agenda.
+async function afwVolgorde(absences, discordVan, kanaal) {
+  const posts = await sb('absence_discord?select=*');
+  const byId = new Map(absences.map(a => [a.id, a]));
+  const vandaag = dkey(new Date());
+  const lijst = posts.map(p => ({ p, a: byId.get(p.absence_id) }))
+    .filter(x => x.a && x.a.tot >= vandaag && x.p.channel_id === kanaal)
+    .sort((x, y) => y.a.tot.localeCompare(x.a.tot) || y.a.van.localeCompare(x.a.van) || String(x.a.created_at).localeCompare(String(y.a.created_at)));
+  // langste begin van de lijst dat al in de juiste volgorde staat (bericht-ID's = tijdstip van posten)
+  let keep = 0, last = 0n;
+  for (const x of lijst) { const id = BigInt(x.p.message_id); if (id < last) break; last = id; keep++; }
+  for (const x of lijst.slice(keep)) {
+    const msg = absenceMessage(x.a, discordVan.get(x.a.user_id));
+    const sent = await discord(`/channels/${kanaal}/messages`, 'POST', msg);
+    await sbUpdate('absence_discord', `absence_id=eq.${x.a.id}`, { message_id: sent.id, sig: absenceSig(msg) });
+    try { await discord(`/channels/${kanaal}/messages/${x.p.message_id}`, 'DELETE'); }
+    catch (e) { if (e.status !== 404) console.log(`Oud afwezigheid-bericht verwijderen: ${e.message}`); }
+    console.log(`Afwezigheid opnieuw geplaatst (volgorde): ${x.a.user_name} tot ${x.a.tot}`);
+  }
 }
 
 async function afwRollen(absences, users) {
